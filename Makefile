@@ -16,6 +16,8 @@ GO_BUILD_OPTS =
 LIB_ADD = DYLD_LIBRARY_PATH=./libshout/src/.libs
 endif
 
+GOFILES := $(shell find . -name "*.go")
+
 default: iceshift test
 
 libshout/src/.libs/libshout.dylib:
@@ -29,7 +31,7 @@ libshout/src/.libs/libshout.o:
 libshout:
 	cd libshout && ./configure --disable-speex --disable-static && make
 
-iceshift: $(LIBSHOUT_DEPS)
+iceshift: $(LIBSHOUT_DEPS) $(GOFILES)
 	go build $(GO_BUILD_OPTS) ./cmd/iceshift
 
 test:
