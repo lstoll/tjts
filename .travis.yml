@@ -1,10 +1,7 @@
 language: go
 go:
 - 1.6
-script: make
-before_install:
-- sudo apt-get -qq update
-- sudo apt-get install -y libogg-dev libvorbis-dev libtheora-dev
+script: go build ./... && go test -v ./...
 before_deploy: mkdir -p upload && mkdir -p pkg && cp libshout/src/.libs/libshout.o
   pkg/ && cp iceshift pkg/ && cd pkg && tar -zcvf ../upload/iceshift-${TRAVIS_COMMIT}.tgz
   && echo ${TRAVIS_COMMIT} > ../upload/latest
