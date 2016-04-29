@@ -6,3 +6,4 @@
 *.lo
 *.Po
 *.Plo
+config.log
