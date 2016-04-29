@@ -1,0 +1,8 @@
+/iceshift
+.libs
+.deps
+*.o
+*.la
+*.lo
+*.Po
+*.Plo
