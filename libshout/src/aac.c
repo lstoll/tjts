@@ -24,7 +24,11 @@
 
 #include <stdlib.h>
 #include <string.h>
+#ifdef __APPLE__
+#include <stdlib.h>
+#else
 #include <malloc.h>
+#endif
 #include <stdio.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -233,5 +237,3 @@ static void close_aac(shout_t *self) {
   free(aac_data->info);
   free(aac_data);
 }
-
-
