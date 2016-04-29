@@ -5,4 +5,4 @@ go:
 script: make
 before_install:
   - sudo apt-get -qq update
-  - sudo apt-get install -y libogg-dev libvorbis-dev libtheora-dev
+  - sudo apt-get install -y libogg-dev libvorbis-dev libtheora-dev libspeex-dev
