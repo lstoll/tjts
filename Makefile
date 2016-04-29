@@ -11,7 +11,9 @@ endif
 
 default: build test
 
-libshout/src/.libs/libshout.dylib:
+libshout/src/.libs/libshout.dylib: libshout
+libshout/src/.libs/libshout.a: libshout
+libshout:
 	cd libshout && ./configure && make
 
 build: $(LIBSHOUT_DEPS)
