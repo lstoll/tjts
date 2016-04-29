@@ -17,7 +17,7 @@ libshout/src/.libs/libshout.dylib: libshout
 libshout/src/.libs/libshout.a: libshout
 
 libshout:
-	cd libshout && ./configure && make
+	cd libshout && ./configure --disable-speex && make
 
 iceshift: $(LIBSHOUT_DEPS)
 	go build $(GO_BUILD_OPTS) ./cmd/iceshift
