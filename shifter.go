@@ -1,8 +1,10 @@
 package iceshift
 
 import (
+	"net"
+	"net/http"
+	"net/http/httputil"
 	"net/url"
-	"strings"
 	"time"
 
 	log "github.com/Sirupsen/logrus"
@@ -16,14 +18,15 @@ type Shifter interface {
 }
 
 type diskShifter struct {
-	client *Shout
+	url  *url.URL
+	conn *httputil.ClientConn
 }
 
 // NewDiskShifter returns a shifter for the given stream that uses the
 // disk as it's storage mechanism. It will buffer for maxOffset
 func NewDiskShifter(icecastURL *url.URL, maxOffset time.Duration) (Shifter, error) {
 	s := &diskShifter{
-		client: shoutClient(icecastURL),
+		url: icecastURL,
 	}
 	return s, s.start()
 }
@@ -36,11 +39,24 @@ func (d *diskShifter) StreamFrom(offset time.Duration) (chan []byte, chan error)
 }
 
 func (d *diskShifter) start() error {
-	d.l("start", "opening-connection").Debugf("Opening connection")
-	if err := d.client.Open(); err != nil {
-		d.l("start", "opening-connection").Error(err)
+	d.l("start", "opening-connection").Debug("Opening connection")
+
+	tcpConn, err := net.Dial("tcp", d.url.Host)
+	if err != nil {
 		return err
 	}
+	d.conn = httputil.NewClientConn(tcpConn, nil)
+
+	req, err := http.NewRequest("GET", d.url.Path, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := d.conn.Do(req)
+	if err != nil {
+		return err
+	}
+
+	// timed reader resp.body
 
 	return nil
 }
@@ -51,22 +67,4 @@ func (d *diskShifter) l(fn, at string) *log.Entry {
 		"fn":     fn,
 		"at":     at,
 	})
-}
-
-func shoutClient(url *url.URL) *Shout {
-	var host, port string
-	spHost := strings.Split(url.Host, ":")
-	host = spHost[0]
-	if len(spHost) > 1 {
-		port = spHost[1]
-	} else {
-		port = "80"
-	}
-
-	opts := map[string]string{
-		"host":  host,
-		"port":  port,
-		"mount": url.Path,
-	}
-	return NewShout(opts)
 }
