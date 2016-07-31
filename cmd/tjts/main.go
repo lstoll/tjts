@@ -16,7 +16,7 @@ func main() {
 	go func() {
 		c.Start(chd)
 	}()
-	sh := tjts.NewMemShifter(chd, cht, 20*time.Hour, "triplej.stream.cache", 10*time.Second)
+	sh := tjts.NewMemShifter(chd, cht, 20*time.Hour, "triplej.stream.cache", 10*time.Minute)
 	s := tjts.NewServer()
 	s.AddEndpoint("triplej", sh)
 	s.ListenAndServe("localhost:8080")
