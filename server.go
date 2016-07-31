@@ -48,7 +48,11 @@ func (i *Server) newHandler(sh Shifter) func(http.ResponseWriter, *http.Request)
 		w.Header().Set("icy-name", "Triple J")
 		for {
 			select {
-			case d := <-data:
+			case d, ok := <-data:
+				if !ok {
+					log.Printf("Data channel closed for client, ending")
+					return
+				}
 				_, err := w.Write(d)
 				if err != nil {
 					closer <- struct{}{}
@@ -56,7 +60,6 @@ func (i *Server) newHandler(sh Shifter) func(http.ResponseWriter, *http.Request)
 				}
 			}
 		}
-		closer <- struct{}{}
 	}
 }
 

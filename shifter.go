@@ -92,29 +92,24 @@ func (m *memShifter) StreamFrom(offset time.Duration) (chan []byte, chan struct{
 	dataChan := make(chan []byte, 32)
 	closeChan := make(chan struct{})
 
-	f := false
 	sf := m.store.CurrPos // Default to start time being "curr pos"
 	st := time.Now().Add(-offset)
-	for i := m.store.CurrPos + 1; i < m.store.Len; i++ {
-		sp := i
-		if sp >= m.store.Len {
-			sp = sp - m.store.Len
+	i := sf + 1
+	for {
+		if i >= m.store.Len {
+			i = 0
+		}
+		if i == sf {
+			// We've looped back to where we started.
+			break
 		}
 		if m.store.TimeStore[i].After(st) {
 			sf = i
-			f = true
 			break
 		}
+		i++
 	}
-	if !f {
-		for i := 0; i < m.store.CurrPos+1; i++ {
-			if m.store.TimeStore[i].After(st) {
-				sf = i
-				break
-			}
-		}
-	}
-	log.Printf("starting at %d", sf)
+	log.Printf("starting at pos %d, timestamp %s", sf, m.store.TimeStore[sf])
 	sub := &subscriber{data: dataChan, currPos: sf}
 	m.subscribers = append(m.subscribers, sub)
 
@@ -159,14 +154,15 @@ func (m *memShifter) start() {
 		for i, sub := range m.subscribers {
 			if sub.closed {
 				m.subscribers = append(m.subscribers[:i], m.subscribers[i+1:]...)
+				close(sub.data)
 				continue
 			}
 			select {
 			case sub.data <- m.store.ChunkStore[sub.currPos]:
 				// log.Printf("Send chunk len %d from pos %d to sub\n", len(m.store.ChunkStore[sub.currPos]), sub.currPos)
 			default:
-				log.Printf("Err sending data to subscribed %#v", sub)
-				close(sub.data)
+				log.Printf("Err sending data to subscriber (chan full?). Closing sub. %#v", sub)
+				sub.closed = true
 			}
 			sub.currPos++
 			if sub.currPos >= m.store.Len {
