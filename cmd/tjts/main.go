@@ -4,6 +4,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"os/signal"
 	"time"
 
 	"github.com/lstoll/tjts"
@@ -13,6 +14,10 @@ import (
 var TripleJURL = "http://live-radio01.mediahubaustralia.com/2TJW/aac/"
 
 func main() {
+	sc := make(chan os.Signal, 1)
+	signal.Notify(sc, os.Interrupt)
+	signal.Notify(sc, os.Kill)
+
 	cachePath := os.Getenv("CACHE_PATH")
 	strCacheInterval := os.Getenv("CACHE_INTERVAL")
 	cacheInterval := 10 * time.Minute
@@ -41,5 +46,13 @@ func main() {
 	sh := tjts.NewMemShifter(chd, cht, 20*time.Hour, tjCache, cacheInterval)
 	s := tjts.NewServer()
 	s.AddEndpoint("triplej", sh)
+	go func() {
+		for range sc {
+			log.Print("Shutdown requested")
+			sh.Shutdown()
+			os.Exit(0)
+		}
+	}()
+
 	s.ListenAndServe(net.JoinHostPort(host, port))
 }

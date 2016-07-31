@@ -2,6 +2,7 @@ package tjts
 
 import (
 	"encoding/gob"
+	"fmt"
 	"log"
 	"os"
 	"time"
@@ -12,12 +13,14 @@ import (
 // will receive bytes to send to the user
 type Shifter interface {
 	StreamFrom(offset time.Duration) (data chan []byte, closer chan struct{})
+	Shutdown()
 }
 
 type memShifter struct {
 	dataIn      chan []byte
 	store       *streamStore
 	subscribers []*subscriber
+	cacheFile   string
 }
 
 // memStore is the in-memory structure for a stream
@@ -43,7 +46,8 @@ type subscriber struct {
 func NewMemShifter(data chan []byte, timePerChunk time.Duration, maxOffset time.Duration, cacheFile string, cacheInterval time.Duration) Shifter {
 	storeSize := int(maxOffset / timePerChunk)
 	m := &memShifter{
-		dataIn: data,
+		dataIn:    data,
+		cacheFile: cacheFile,
 		store: &streamStore{
 			TimeStore:  make([]time.Time, storeSize),
 			ChunkStore: make([][]byte, storeSize),
@@ -64,10 +68,24 @@ func NewMemShifter(data chan []byte, timePerChunk time.Duration, maxOffset time.
 		}
 		f.Close()
 
-		go m.cacher(cacheFile, cacheInterval)
+		go func() {
+			// Start the cacher
+			for range time.NewTicker(cacheInterval).C {
+				if err := m.writeCache(); err != nil {
+					fmt.Printf("Error writing cache file: %q", err)
+				}
+
+			}
+		}()
 	}
 	go m.start()
 	return m
+}
+
+func (m *memShifter) Shutdown() {
+	if err := m.writeCache(); err != nil {
+		fmt.Printf("Error writing cache file: %q", err)
+	}
 }
 
 func (m *memShifter) StreamFrom(offset time.Duration) (chan []byte, chan struct{}) {
@@ -159,21 +177,21 @@ func (m *memShifter) start() {
 	log.Print("Offset store ending. This is an error!!!!!")
 }
 
-func (m *memShifter) cacher(path string, interval time.Duration) {
-	// Start the cacher
-	for range time.NewTicker(interval).C {
-		log.Printf("Writing stream cache to %q", path)
-		f, err := os.Create(path + ".tmp")
+func (m *memShifter) writeCache() error {
+	if m.cacheFile != "" {
+		log.Printf("Writing stream cache to %q", m.cacheFile)
+		f, err := os.Create(m.cacheFile + ".tmp")
 		if err != nil {
 			log.Printf("Error creating cache file: %q", err)
-			continue
+			return err
 		}
 		encoder := gob.NewEncoder(f)
 		encoder.Encode(m.store)
 		f.Close()
-		if err := os.Rename(path+".tmp", path); err != nil {
+		if err := os.Rename(m.cacheFile+".tmp", m.cacheFile); err != nil {
 			log.Printf("Error renaming temp cache file: %q", err)
-
+			return err
 		}
 	}
+	return nil
 }
