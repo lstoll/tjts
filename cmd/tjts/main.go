@@ -10,12 +10,14 @@ import (
 var TripleJURL = "http://live-radio01.mediahubaustralia.com/2TJW/aac/"
 
 func main() {
-	c := tjts.NewClient(TripleJURL, 2*time.Second)
+	cht := 2 * time.Second
+	c := tjts.NewClient(TripleJURL, cht)
 	chd := make(chan []byte, 512)
 	go func() {
 		c.Start(chd)
 	}()
+	sh := tjts.NewMemShifter(chd, cht, 20*time.Hour)
 	s := tjts.NewServer()
-	s.AddEndpoint("triplej", chd)
+	s.AddEndpoint("triplej", sh)
 	s.ListenAndServe("localhost:8080")
 }
