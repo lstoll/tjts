@@ -54,10 +54,8 @@ func (m *memShifter) StreamFrom(offset time.Duration) (chan []byte, chan struct{
 	dataChan := make(chan []byte)
 	closeChan := make(chan struct{})
 
-	// TODO - stream closer mechanism thing.
-
 	f := false
-	var sf int
+	sf := m.store.currPos // Default to start time being "curr pos"
 	st := time.Now().Add(-offset)
 	for i := m.store.currPos + 1; i < m.store.len; i++ {
 		if m.store.timeStore[i].After(st) {
