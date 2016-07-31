@@ -1,37 +1,30 @@
 package iceshift
 
 import (
-	"fmt"
+	"log"
 	"net/http"
-	"net/url"
-	"time"
-
-	log "github.com/Sirupsen/logrus"
 )
 
-type IceServer struct {
-	shifters []Shifter
+type Server struct {
 }
 
-func NewIceServer() *IceServer {
-	return &IceServer{}
+func NewServer() *Server {
+	return &Server{}
 }
 
-func (i *IceServer) AddEndpoint(upstream *url.URL, mountAt string, maxOffset time.Duration) {
-	shifter := NewDiskShifter(upstream, maxOffset)
-	i.shifters = append(i.shifters, shifter)
-	http.HandleFunc("/"+mountAt, i.httpHandler(shifter))
+func (s *Server) AddEndpoint(mount string, data chan ([]byte)) {
+	http.HandleFunc("/"+mount, s.newHandler(data))
 }
 
-func (i *IceServer) ListenAndServe(listen string) {
-	log.WithFields(log.Fields{"fn": "ListenAndServe", "at": "listening", "address": listen}).Info("Server Started")
+func (s *Server) ListenAndServe(listen string) {
+	log.Printf("Starting server at %s", listen)
 	http.ListenAndServe(listen, nil)
 }
 
-func (i *IceServer) httpHandler(shifter Shifter) func(http.ResponseWriter, *http.Request) {
+func (i *Server) newHandler(data chan []byte) func(http.ResponseWriter, *http.Request) {
 	// Guts of the icecast stuff. Listen on mount, send data from shifter down.
 	return func(w http.ResponseWriter, r *http.Request) {
-		offsetStr := r.URL.Query().Get("offset")
+		/*offsetStr := r.URL.Query().Get("offset")
 		var offset time.Duration
 		if offsetStr == "" {
 			offset = 0 * time.Second
@@ -44,8 +37,7 @@ func (i *IceServer) httpHandler(shifter Shifter) func(http.ResponseWriter, *http
 				return
 			}
 			offset = parsed
-		}
-		data, errs := shifter.StreamFrom(offset)
+		}*/
 		w.Header().Set("Content-Type", "audio/aacp")
 		w.Header().Set("icy-name", "Triple J")
 		for {
@@ -55,8 +47,6 @@ func (i *IceServer) httpHandler(shifter Shifter) func(http.ResponseWriter, *http
 				if err != nil {
 					return
 				}
-			case <-errs:
-				return
 			}
 		}
 	}

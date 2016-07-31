@@ -1,18 +1,21 @@
 package main
 
 import (
-	"net/url"
 	"time"
 
 	"github.com/lstoll/iceshift"
 )
 
+// TripleJURL is HARDCODE
+var TripleJURL = "http://live-radio01.mediahubaustralia.com/2TJW/aac/"
+
 func main() {
-	url, err := url.Parse("http://live-radio01.mediahubaustralia.com/2TJW/aac/")
-	if err != nil {
-		panic(err)
-	}
-	server := iceshift.NewIceServer()
-	server.AddEndpoint(url, "triplej", 60*time.Minute)
-	server.ListenAndServe("127.0.0.1:8080")
+	c := iceshift.NewClient(TripleJURL, 2*time.Second)
+	chd := make(chan []byte, 512)
+	go func() {
+		c.Start(chd)
+	}()
+	s := iceshift.NewServer()
+	s.AddEndpoint("triplej", chd)
+	s.ListenAndServe("localhost:8080")
 }

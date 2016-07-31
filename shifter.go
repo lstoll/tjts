@@ -55,6 +55,7 @@ func (d *diskShifter) start() error {
 	if err != nil {
 		return err
 	}
+	_ = resp
 
 	// timed reader resp.body
 
