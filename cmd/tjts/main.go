@@ -1,6 +1,9 @@
 package main
 
 import (
+	"log"
+	"net"
+	"os"
 	"time"
 
 	"github.com/lstoll/tjts"
@@ -10,14 +13,33 @@ import (
 var TripleJURL = "http://live-radio01.mediahubaustralia.com/2TJW/aac/"
 
 func main() {
+	cachePath := os.Getenv("CACHE_PATH")
+	strCacheInterval := os.Getenv("CACHE_INTERVAL")
+	cacheInterval := 10 * time.Minute
+	if strCacheInterval != "" {
+		parsed, err := time.ParseDuration(strCacheInterval)
+		if err != nil {
+			log.Fatalf("Error parsing CACHE_INTERVAL=%s: %q", strCacheInterval, err)
+		}
+		cacheInterval = parsed
+	}
+	host := os.Getenv("HOST")
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
 	cht := 2 * time.Second
 	c := tjts.NewClient(TripleJURL, cht)
 	chd := make(chan []byte, 512)
 	go func() {
 		c.Start(chd)
 	}()
-	sh := tjts.NewMemShifter(chd, cht, 20*time.Hour, "triplej.stream.cache", 10*time.Minute)
+	var tjCache string
+	if cachePath != "" {
+		tjCache = cachePath + "/triplej.stream.cache"
+	}
+	sh := tjts.NewMemShifter(chd, cht, 20*time.Hour, tjCache, cacheInterval)
 	s := tjts.NewServer()
 	s.AddEndpoint("triplej", sh)
-	s.ListenAndServe("localhost:8080")
+	s.ListenAndServe(net.JoinHostPort(host, port))
 }
