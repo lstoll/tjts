@@ -41,7 +41,7 @@ func (c *Client) Start(receiveCh chan []byte) error {
 
 			for {
 				data := make([]byte, c.chunkBytes)
-				_, err := io.ReadAtLeast(r.Body, data, c.chunkBytes)
+				_, err := io.ReadFull(r.Body, data)
 				if err != nil {
 					log.Printf("Error reading from connection: %q", err)
 					break
