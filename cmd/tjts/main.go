@@ -11,7 +11,8 @@ import (
 )
 
 // TripleJURL is HARDCODE
-var TripleJURL = "http://live-radio01.mediahubaustralia.com/2TJW/aac/"
+const TripleJURL = "http://live-radio01.mediahubaustralia.com/2TJW/aac/"
+const DoubleJURL = "http://live-radio02.mediahubaustralia.com/DJDW/aac/"
 
 func main() {
 	sc := make(chan os.Signal, 1)
@@ -33,23 +34,37 @@ func main() {
 	if port == "" {
 		port = "8080"
 	}
+
 	cht := 2 * time.Second
-	c := tjts.NewClient(TripleJURL, cht)
-	chd := make(chan []byte, 512)
+
+	tc := tjts.NewClient(TripleJURL, cht)
+	tchd := make(chan []byte, 512)
 	go func() {
-		c.Start(chd)
+		tc.Start(tchd)
 	}()
-	var tjCache string
+
+	dc := tjts.NewClient(DoubleJURL, cht)
+	dchd := make(chan []byte, 512)
+	go func() {
+		dc.Start(dchd)
+	}()
+
+	var tjCache, djCache string
 	if cachePath != "" {
 		tjCache = cachePath + "/triplej.stream.cache"
+		djCache = cachePath + "/doublej.stream.cache"
 	}
-	sh := tjts.NewMemShifter(chd, cht, 20*time.Hour, tjCache, cacheInterval)
+
+	tsh := tjts.NewMemShifter(tchd, cht, 20*time.Hour, tjCache, cacheInterval)
+	dsh := tjts.NewMemShifter(dchd, cht, 20*time.Hour, djCache, cacheInterval)
 	s := tjts.NewServer()
-	s.AddEndpoint("triplej", sh)
+	s.AddEndpoint("doublej", dsh)
+	s.AddEndpoint("triplej", tsh)
 	go func() {
 		for range sc {
 			log.Print("Shutdown requested")
-			sh.Shutdown()
+			tsh.Shutdown()
+			dsh.Shutdown()
 			os.Exit(0)
 		}
 	}()

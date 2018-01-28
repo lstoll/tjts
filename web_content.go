@@ -13,22 +13,32 @@ const IndexHTML = `
       now.tz("Australia/Sydney");
       var sydOffset = now.utcOffset();
       var diffSeconds = (sydOffset - localOffset) * 60;
-      var streamURL = window.location.href + "triplej?offset=" + diffSeconds + "s";
+      var tstreamURL = window.location.href + "triplej?offset=" + diffSeconds + "s";
+      var dstreamURL = window.location.href + "doublej?offset=" + diffSeconds + "s";
       window.onload = function() {
           var tzspan = document.getElementById("detectedtz");
           tzspan.innerHTML = moment.tz.guess();
-          var urlspan = document.getElementById("streamurl");
-          urlspan.innerHTML = streamURL;
-          var player = document.getElementById("player");
-          player.src = streamURL;
-          player.load();
+
+          var turlspan = document.getElementById("tstreamurl");
+          turlspan.innerHTML = tstreamURL;
+          var tplayer = document.getElementById("tplayer");
+          tplayer.src = tstreamURL;
+
+          var durlspan = document.getElementById("dstreamurl");
+          durlspan.innerHTML = dstreamURL;
+          var dplayer = document.getElementById("dplayer");
+          dplayer.src = dstreamURL;
       }
     </script>
   </head>
   <body>
-    <h1>Triple J offset to your TZ</h1>
-    <p>Stream URL for detected TZ: <span id="detectedtz"></span>: <span id="streamurl"></span></p>
-    <audio id="player" controls></audio>
+    <h1>Timezone: <span id="detectedtz"></span></h1>
+    <h2>Triple J offset to your TZ</h2>
+    <p>Stream URL for detected TZ: <span id="tstreamurl"></span></p>
+    <audio id="tplayer" controls></audio>
+    <h2>Double J offset to your TZ</h2>
+    <p>Stream URL for detected TZ: <span id="dstreamurl"></span></p>
+    <audio id="dplayer" controls></audio>
   </body>
 </html>
 `
