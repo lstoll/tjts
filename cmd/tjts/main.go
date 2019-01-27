@@ -35,15 +35,13 @@ func main() {
 		port = "8080"
 	}
 
-	cht := 2 * time.Second
-
-	tc := tjts.NewClient(TripleJURL, cht)
+	tc := tjts.NewClient(TripleJURL, 16384) // 64k
 	tchd := make(chan []byte, 512)
 	go func() {
 		tc.Start(tchd)
 	}()
 
-	dc := tjts.NewClient(DoubleJURL, cht)
+	dc := tjts.NewClient(DoubleJURL, 16384) // 64 k
 	dchd := make(chan []byte, 512)
 	go func() {
 		dc.Start(dchd)
@@ -55,8 +53,8 @@ func main() {
 		djCache = cachePath + "/doublej.stream.cache"
 	}
 
-	tsh := tjts.NewMemShifter(tchd, cht, 20*time.Hour, tjCache, cacheInterval)
-	dsh := tjts.NewMemShifter(dchd, cht, 20*time.Hour, djCache, cacheInterval)
+	tsh := tjts.NewMemShifter(tchd, 2*time.Second, 20*time.Hour, tjCache, cacheInterval)
+	dsh := tjts.NewMemShifter(dchd, 2*time.Second, 20*time.Hour, djCache, cacheInterval)
 	s := tjts.NewServer()
 	s.AddEndpoint("doublej", dsh)
 	s.AddEndpoint("triplej", tsh)

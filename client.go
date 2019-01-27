@@ -5,22 +5,20 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"strconv"
 	"time"
 )
 
 type Client struct {
 	URL        string
-	chunkTime  time.Duration
-	metaint    int
-	bitrate    int
 	chunkBytes int
 }
 
-func NewClient(url string, chunkTime time.Duration) *Client {
+// NewClient returns a client for URL. chunkbytes is how big each chunk we grab
+// is. It should correspond to the amount of data in each replay tick.
+func NewClient(url string, chunkBytes int) *Client {
 	return &Client{
-		URL:       url,
-		chunkTime: chunkTime,
+		URL:        url,
+		chunkBytes: chunkBytes,
 	}
 }
 
@@ -65,7 +63,6 @@ func (c *Client) openConn() (*http.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	// req.Header.Add("Icy-MetaData", "1")
 	resp, err := cl.Do(req)
 	if err != nil {
 		return nil, err
@@ -73,15 +70,6 @@ func (c *Client) openConn() (*http.Response, error) {
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("Stream returned non-200 status: %d", resp.StatusCode)
 	}
-	/*c.metaint, err = strconv.Atoi(resp.Header.Get("icy-metaint"))
-	if err != nil {
-		return nil, err
-	}*/
-	c.bitrate, err = strconv.Atoi(resp.Header.Get("icy-br"))
-	if err != nil {
-		return nil, err
-	}
-	c.chunkBytes = (c.bitrate / 8) * 1024 * int(c.chunkTime.Seconds())
 	log.Printf("Connection Established %q", c.URL)
 	return resp, nil
 }
