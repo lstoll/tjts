@@ -23,7 +23,7 @@ func NewClient(url string, chunkBytes int) *Client {
 }
 
 // Start begins a stream. Received data will be output on the passed in channel
-// every X time, as configured. Time is calcualted via bitrate. This function is
+// every X time, as configured. Time is calculated via bitrate. This function is
 // blocking, and retrying - it will not return on error by default.
 func (c *Client) Start(receiveCh chan []byte) error {
 	errch := make(chan error)
@@ -49,11 +49,9 @@ func (c *Client) Start(receiveCh chan []byte) error {
 		}
 	}()
 
-	select {
-	case err := <-errch:
-		close(receiveCh)
-		return err
-	}
+	err := <-errch
+	close(receiveCh)
+	return err
 }
 
 func (c *Client) openConn() (*http.Response, error) {

@@ -43,6 +43,8 @@ const IndexHTML = `
 </html>
 `
 
+// MomentJS Library
+// nolint:misspell
 const MomentJS = `
 //! moment.js
 //! version : 2.12.0
@@ -3734,6 +3736,8 @@ const MomentJS = `
 }));
 `
 
+// MomentJSWTZWithData TZ data
+// nolint:misspell
 const MomentJSWTZWithData = `
 //! moment-timezone.js
 //! version : 0.5.3

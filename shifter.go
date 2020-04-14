@@ -128,11 +128,9 @@ func (m *memShifter) StreamFrom(offset time.Duration) (chan []byte, chan struct{
 	}
 
 	go func() {
-		select {
-		case <-closeChan:
-			log.Print("Closing subscriber")
-			sub.closed = true
-		}
+		<-closeChan
+		log.Print("Closing subscriber")
+		sub.closed = true
 	}()
 
 	return dataChan, closeChan
@@ -182,7 +180,9 @@ func (m *memShifter) writeCache() error {
 			return err
 		}
 		encoder := gob.NewEncoder(f)
-		encoder.Encode(m.store)
+		if err := encoder.Encode(m.store); err != nil {
+			return fmt.Errorf("failed encoding data: %v", err)
+		}
 		f.Close()
 		if err := os.Rename(m.cacheFile+".tmp", m.cacheFile); err != nil {
 			log.Printf("Error renaming temp cache file: %q", err)

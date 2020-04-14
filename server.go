@@ -18,15 +18,17 @@ func NewServer() *Server {
 }
 
 func (s *Server) AddEndpoint(mount string, sh Shifter) {
-	http.HandleFunc("/"+mount, s.newHandler(sh))
+	http.HandleFunc("/"+mount, newHandler(sh))
 }
 
 func (s *Server) ListenAndServe(listen string) {
 	log.Printf("Starting server at %s", listen)
-	http.ListenAndServe(listen, nil)
+	if err := http.ListenAndServe(listen, nil); err != nil {
+		log.Fatal(err)
+	}
 }
 
-func (i *Server) newHandler(sh Shifter) func(http.ResponseWriter, *http.Request) {
+func newHandler(sh Shifter) func(http.ResponseWriter, *http.Request) {
 	// Guts of the icecast stuff. Listen on mount, send data from shifter down.
 	return func(w http.ResponseWriter, r *http.Request) {
 		offsetStr := r.URL.Query().Get("offset")
@@ -46,20 +48,15 @@ func (i *Server) newHandler(sh Shifter) func(http.ResponseWriter, *http.Request)
 		data, closer := sh.StreamFrom(offset)
 		w.Header().Set("Content-Type", "audio/aacp")
 		w.Header().Set("icy-name", "Triple J")
-		for {
-			select {
-			case d, ok := <-data:
-				if !ok {
-					log.Printf("Data channel closed for client, ending")
-					return
-				}
-				_, err := w.Write(d)
-				if err != nil {
-					closer <- struct{}{}
-					return
-				}
+		for d := range data {
+			_, err := w.Write(d)
+			if err != nil {
+				closer <- struct{}{}
+				return
+
 			}
 		}
+		log.Printf("Data channel closed for client, ending")
 	}
 }
 

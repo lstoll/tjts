@@ -17,7 +17,6 @@ const DoubleJURL = "http://live-radio02.mediahubaustralia.com/DJDW/aac/"
 func main() {
 	sc := make(chan os.Signal, 1)
 	signal.Notify(sc, os.Interrupt)
-	signal.Notify(sc, os.Kill)
 
 	cachePath := os.Getenv("CACHE_PATH")
 	strCacheInterval := os.Getenv("CACHE_INTERVAL")
@@ -38,13 +37,17 @@ func main() {
 	tc := tjts.NewClient(TripleJURL, 16384) // 64k
 	tchd := make(chan []byte, 512)
 	go func() {
-		tc.Start(tchd)
+		if err := tc.Start(tchd); err != nil {
+			log.Fatalf("error starting triplej: %v", err)
+		}
 	}()
 
 	dc := tjts.NewClient(DoubleJURL, 16384) // 64 k
 	dchd := make(chan []byte, 512)
 	go func() {
-		dc.Start(dchd)
+		if err := dc.Start(dchd); err != nil {
+			log.Fatalf("error starting doublej: %v", err)
+		}
 	}()
 
 	var tjCache, djCache string
