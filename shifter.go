@@ -89,6 +89,7 @@ func (m *memShifter) Shutdown() {
 }
 
 func (m *memShifter) StreamFrom(offset time.Duration) (chan []byte, chan struct{}) {
+	log.Printf("stream requested from %s", offset)
 	dataChan := make(chan []byte, 32)
 	closeChan := make(chan struct{})
 

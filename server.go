@@ -7,13 +7,13 @@ import (
 	"time"
 )
 
+const baseTZ = "Australia/Sydney"
+
 type Server struct {
 }
 
 func NewServer() *Server {
 	http.HandleFunc("/", newStaticHandler(IndexHTML))
-	http.HandleFunc("/moment.js", newStaticHandler(MomentJS))
-	http.HandleFunc("/moment-timezone-with-data-2010-2020.js", newStaticHandler(MomentJSWTZWithData))
 	return &Server{}
 }
 
@@ -31,20 +31,28 @@ func (s *Server) ListenAndServe(listen string) {
 func newHandler(sh Shifter) func(http.ResponseWriter, *http.Request) {
 	// Guts of the icecast stuff. Listen on mount, send data from shifter down.
 	return func(w http.ResponseWriter, r *http.Request) {
-		offsetStr := r.URL.Query().Get("offset")
-		var offset time.Duration
-		if offsetStr == "" {
-			offset = 0 * time.Second
-		} else {
-			parsed, err := time.ParseDuration(offsetStr)
-			if err != nil {
-				// handle error
-				w.WriteHeader(http.StatusBadRequest)
-				fmt.Fprintf(w, "Error parsing offset: %s", err)
-				return
-			}
-			offset = parsed
+		tzStr := r.URL.Query().Get("tz")
+
+		// calculate the difference between the same contrived time in the
+		// different timezones to figure their offset.
+		tz, err := time.LoadLocation(tzStr)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Couldn't find timezone %s", tzStr), http.StatusBadRequest)
+			return
 		}
+
+		t := time.Date(1981, 12, 6, 01, 00, 00, 00, tz)
+
+		btz, err := time.LoadLocation(baseTZ)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Couldn't find timezone %s", baseTZ), http.StatusBadRequest)
+			return
+		}
+
+		bt := time.Date(1981, 12, 6, 01, 00, 00, 00, btz)
+
+		offset := t.Sub(bt)
+
 		data, closer := sh.StreamFrom(offset)
 		w.Header().Set("Content-Type", "audio/aacp")
 		w.Header().Set("icy-name", "Triple J")

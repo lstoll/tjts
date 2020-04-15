@@ -11,7 +11,7 @@ RUN adduser \
 
 COPY . /build
 
-run cd /build && CGO_ENABLED=0 go install ./...
+RUN cd /build && CGO_ENABLED=0 go install ./...
 
 FROM scratch
 
@@ -19,8 +19,11 @@ COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=build /etc/passwd /etc/passwd
 COPY --from=build /etc/group /etc/group
 
+COPY --from=build /usr/share/zoneinfo /usr/share/zoneinfo
+
 COPY --from=build /go/bin/tjts /usr/bin/tjts
 
 USER app:app
+EXPOSE 8080
 
 ENTRYPOINT ["/usr/bin/tjts"]
