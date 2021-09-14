@@ -1,10 +1,7 @@
 package tjts
 
 import (
-	"encoding/gob"
-	"fmt"
 	"log"
-	"os"
 	"time"
 )
 
@@ -18,17 +15,9 @@ type Shifter interface {
 
 type memShifter struct {
 	dataIn      chan []byte
-	store       *streamStore
+	store       *diskBuf
 	subscribers []*subscriber
 	cacheFile   string
-}
-
-// memStore is the in-memory structure for a stream
-type streamStore struct {
-	TimeStore  []time.Time
-	ChunkStore [][]byte
-	CurrPos    int
-	Len        int
 }
 
 // subscriber represents a consumer and their "index"
@@ -43,48 +32,34 @@ type subscriber struct {
 // empty, the contents of the memory store will be written here every
 // cacheInterval. If this file exists and start time, it will be read in to
 // memory
-func NewMemShifter(data chan []byte, timePerChunk time.Duration, maxOffset time.Duration, cacheFile string, cacheInterval time.Duration) Shifter {
-	storeSize := int(maxOffset / timePerChunk)
+//
+// TODO - rename
+func NewMemShifter(data chan []byte, timePerChunk time.Duration, maxOffset time.Duration, cacheFile string, cacheInterval time.Duration) (Shifter, error) {
+	if cacheFile == "" {
+		panic("provide cacheFile now")
+	}
+	if timePerChunk != 2*time.Second {
+		panic("hard coded the chunk time now, either make it configurable or make it 2 seconds")
+	}
+	// TODO - we pass a chunkbites of 16386 to the client, which works out to be
+	// 65536 bitrate with 2s chunks. so consolicate what we set there with what
+	// we set here, via some params or whatever
+	b, err := openBuffer(cacheFile, 65536, 2*time.Second, maxOffset)
+	if err != nil {
+		return nil, err
+	}
 	m := &memShifter{
 		dataIn:    data,
 		cacheFile: cacheFile,
-		store: &streamStore{
-			TimeStore:  make([]time.Time, storeSize),
-			ChunkStore: make([][]byte, storeSize),
-			CurrPos:    0,
-			Len:        storeSize,
-		},
-	}
-	if cacheFile != "" {
-		// Read it if it exists
-		f, err := os.Open(cacheFile)
-		if err == nil {
-			log.Printf("Loading cache file from: %q", cacheFile)
-			decoder := gob.NewDecoder(f)
-			err = decoder.Decode(m.store)
-			if err != nil {
-				log.Printf("Error decoding cache file, ignoring: %q", err)
-			}
-		}
-		f.Close()
-
-		go func() {
-			// Start the cacher
-			for range time.NewTicker(cacheInterval).C {
-				if err := m.writeCache(); err != nil {
-					fmt.Printf("Error writing cache file: %q", err)
-				}
-
-			}
-		}()
+		store:     b,
 	}
 	go m.start()
-	return m
+	return m, nil
 }
 
 func (m *memShifter) Shutdown() {
-	if err := m.writeCache(); err != nil {
-		fmt.Printf("Error writing cache file: %q", err)
+	if err := m.store.Close(); err != nil {
+		log.Printf("Error closing storage: %q", err)
 	}
 }
 
@@ -93,45 +68,45 @@ func (m *memShifter) StreamFrom(offset time.Duration) (chan []byte, chan struct{
 	dataChan := make(chan []byte, 32)
 	closeChan := make(chan struct{})
 
-	sf := m.store.CurrPos // Default to start time being "curr pos"
-	st := time.Now().Add(-offset)
-	i := sf + 1
-	for {
-		if i >= m.store.Len {
-			i = 0
-		}
-		if i == sf {
-			// We've looped back to where we started.
-			break
-		}
-		if m.store.TimeStore[i].After(st) {
-			sf = i
-			break
-		}
-		i++
-	}
-	log.Printf("starting at pos %d, timestamp %s", sf, m.store.TimeStore[sf])
-	sub := &subscriber{data: dataChan, currPos: sf}
-	m.subscribers = append(m.subscribers, sub)
-
-	// Pre seed chunks to give the user a "cache"
-	for i := sf - 5; i < sf; i++ {
-		sp := i
-		if sp < 0 {
-			sp = m.store.Len + sp
-		}
-		if len(m.store.ChunkStore[sp]) == 0 {
-			// Nothing here yet, bail out
-			break
-		}
-		log.Printf("pre-seeding chunk from %d", sp)
-		dataChan <- m.store.ChunkStore[sp]
+	t := time.Now().Add(-offset)
+	c, err := m.store.CursorFrom(t)
+	if err != nil {
+		// TODO
+		panic(err)
 	}
 
 	go func() {
-		<-closeChan
-		log.Print("Closing subscriber")
-		sub.closed = true
+		// preseed
+		log.Print("preseeding")
+		for i := 0; i < 5; i++ {
+			b, err := c.Next()
+			if err != nil {
+				log.Printf("cursor next error: %v", err)
+				return
+			}
+			dataChan <- b
+		}
+
+		log.Print("starting ticker")
+
+		// TODO - config interval
+		tr := time.NewTicker(2 * time.Second)
+		for {
+			select {
+			case <-closeChan:
+				tr.Stop()
+				log.Print("closing")
+				return
+			case tk := <-tr.C:
+				b, err := c.Next()
+				if err != nil {
+					log.Printf("cursor next error: %v", err)
+					return
+				}
+				log.Printf("send data tick %s", tk)
+				dataChan <- b
+			}
+		}
 	}()
 
 	return dataChan, closeChan
@@ -141,54 +116,8 @@ func (m *memShifter) start() {
 	log.Print("Starting offset store")
 
 	for d := range m.dataIn {
-		// Store the chunks, update the offset
-		m.store.ChunkStore[m.store.CurrPos] = d
-		m.store.TimeStore[m.store.CurrPos] = time.Now()
-		m.store.CurrPos++
-		if m.store.CurrPos >= m.store.Len {
-			m.store.CurrPos = 0
-		}
-
-		// For every subscriber channel, send them their current chunk
-		for i, sub := range m.subscribers {
-			if sub.closed {
-				m.subscribers = append(m.subscribers[:i], m.subscribers[i+1:]...)
-				close(sub.data)
-				continue
-			}
-			select {
-			case sub.data <- m.store.ChunkStore[sub.currPos]:
-				// log.Printf("Send chunk len %d from pos %d to sub\n", len(m.store.ChunkStore[sub.currPos]), sub.currPos)
-			default:
-				log.Printf("Err sending data to subscriber (chan full?). Closing sub. %#v", sub)
-				sub.closed = true
-			}
-			sub.currPos++
-			if sub.currPos >= m.store.Len {
-				sub.currPos = 0
-			}
+		if err := m.store.WriteChunk(time.Now(), d); err != nil {
+			log.Fatalf("writing chunk: %v", err)
 		}
 	}
-	log.Print("Offset store ending. This is an error!!!!!")
-}
-
-func (m *memShifter) writeCache() error {
-	if m.cacheFile != "" {
-		log.Printf("Writing stream cache to %q", m.cacheFile)
-		f, err := os.Create(m.cacheFile + ".tmp")
-		if err != nil {
-			log.Printf("Error creating cache file: %q", err)
-			return err
-		}
-		encoder := gob.NewEncoder(f)
-		if err := encoder.Encode(m.store); err != nil {
-			return fmt.Errorf("failed encoding data: %v", err)
-		}
-		f.Close()
-		if err := os.Rename(m.cacheFile+".tmp", m.cacheFile); err != nil {
-			log.Printf("Error renaming temp cache file: %q", err)
-			return err
-		}
-	}
-	return nil
 }

@@ -56,8 +56,14 @@ func main() {
 		djCache = cachePath + "/doublej.stream.cache"
 	}
 
-	tsh := tjts.NewMemShifter(tchd, 2*time.Second, 20*time.Hour, tjCache, cacheInterval)
-	dsh := tjts.NewMemShifter(dchd, 2*time.Second, 20*time.Hour, djCache, cacheInterval)
+	tsh, err := tjts.NewMemShifter(tchd, 2*time.Second, 20*time.Hour, tjCache, cacheInterval)
+	if err != nil {
+		log.Fatalf("creating shifter: %v", err)
+	}
+	dsh, err := tjts.NewMemShifter(dchd, 2*time.Second, 20*time.Hour, djCache, cacheInterval)
+	if err != nil {
+		log.Fatalf("creating shifter: %v", err)
+	}
 	s := tjts.NewServer()
 	s.AddEndpoint("doublej", dsh)
 	s.AddEndpoint("triplej", tsh)
