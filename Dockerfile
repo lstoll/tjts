@@ -14,8 +14,7 @@ RUN adduser \
 RUN mkdir -p /src/tjts
 WORKDIR /src/tjts
 
-# COPY go.mod go.sum ./
-COPY go.mod ./
+COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
