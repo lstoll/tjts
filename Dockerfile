@@ -1,4 +1,6 @@
-FROM golang:1.14 as build
+# syntax=docker/dockerfile:1.3
+
+FROM golang:1.17 AS build
 
 RUN adduser \
     --disabled-password \
@@ -9,21 +11,23 @@ RUN adduser \
     --uid 1000 \
     app
 
-COPY . /build
+RUN mkdir -p /src/tjts
+WORKDIR /src/tjts
 
-RUN cd /build && CGO_ENABLED=0 go install ./...
+# COPY go.mod go.sum ./
+COPY go.mod ./
+RUN go mod download
+
+COPY . .
+
+RUN --mount=type=cache,target=/root/.cache/go-build CGO_ENABLED=0 go install ./...
 
 FROM scratch
 
-COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=build /etc/passwd /etc/passwd
 COPY --from=build /etc/group /etc/group
 
-COPY --from=build /usr/share/zoneinfo /usr/share/zoneinfo
-
 COPY --from=build /go/bin/tjts /usr/bin/tjts
-
-USER app:app
-EXPOSE 8080
 
 ENTRYPOINT ["/usr/bin/tjts"]

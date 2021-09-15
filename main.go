@@ -6,6 +6,9 @@ import (
 	"os"
 	"os/signal"
 	"time"
+
+	// avoid having to bundle this in the docker image
+	_ "time/tzdata"
 )
 
 // TripleJURL is HARDCODE
