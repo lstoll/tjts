@@ -1,0 +1,11 @@
+#EXTM3U
+#EXT-X-TARGETDURATION:10
+#EXT-X-ALLOW-CACHE:YES
+#EXT-X-VERSION:3
+#EXT-X-MEDIA-SEQUENCE:163172875
+#EXTINF:10.000,
+https://abcradiolivehls-lh.akamaihd.net/i/triplejnsw_1@327300/segment163172875_64_a-p.ts?sd=10&rebase=on
+#EXTINF:10.000,
+https://abcradiolivehls-lh.akamaihd.net/i/triplejnsw_1@327300/segment163172876_64_a-p.ts?sd=10&rebase=on
+#EXTINF:10.000,
+https://abcradiolivehls-lh.akamaihd.net/i/triplejnsw_1@327300/segment163172877_64_a-p.ts?sd=10&rebase=on

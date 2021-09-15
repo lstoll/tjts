@@ -9,6 +9,10 @@ import (
 
 const baseTZ = "Australia/Sydney"
 
+type Shifter interface {
+	StreamFrom(time.Duration) (chan []byte, chan struct{})
+}
+
 type Server struct {
 }
 

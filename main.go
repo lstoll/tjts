@@ -5,6 +5,7 @@ import (
 	"flag"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"time"
 
@@ -31,6 +32,18 @@ func main() {
 		log.Fatal("-config must be provided")
 	}
 
+	cfg, err := loadAndValdiateConfig(*configPath)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// TODO - ensure db exists/make it? avoid those out of memory errors
+
+	rec, err := newRecorder(cfg.DBPath)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	mux := http.NewServeMux()
 
 	srv := &http.Server{
@@ -41,6 +54,30 @@ func main() {
 	var g run.Group
 
 	g.Add(run.SignalHandler(ctx, os.Interrupt))
+
+	for _, s := range cfg.Streams {
+		hc := &http.Client{
+			Timeout: time.Second * 5,
+		}
+
+		u, err := url.Parse(s.URL)
+		if err != nil {
+			log.Fatalf("parsing %s for %s: %v", s.URL, s.ID, err)
+		}
+
+		dcs, err := newDiskChunkStore(rec, cfg.ChunkDir, s.ID)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		f := &fetcher{
+			hc:  hc,
+			url: u,
+			cs:  dcs,
+		}
+
+		g.Add(f.Run, f.Interrupt)
+	}
 
 	g.Add(func() error {
 		return srv.ListenAndServe()
