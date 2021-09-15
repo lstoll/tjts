@@ -57,14 +57,12 @@ func (r *recorder) RecordChunk(ctx context.Context, streamID, chunkID string, ti
 	return nil
 }
 
-func (r *recorder) ChunksFrom(ctx context.Context, streamID string, from time.Time, num int) ([]string, error) {
+func (r *recorder) ChunksBefore(ctx context.Context, streamID string, before time.Time, num int) ([]string, error) {
 	var chunks []string
 
-	// TODO this probably won't work, need to think about it when we get to this problem
-
 	rows, err := r.db.QueryContext(ctx,
-		`select chunk_id from chunks where stream_id = $1 and fetched_at < $2 order by fetched_at asc limit $3`,
-		from.UTC(), num,
+		`select chunk_id from chunks where stream_id = $1 and fetched_at < $2 order by fetched_at desc limit $3`,
+		streamID, before.UTC(), num,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("getting chunks: %v", err)
@@ -79,6 +77,12 @@ func (r *recorder) ChunksFrom(ctx context.Context, streamID string, from time.Ti
 
 		chunks = append(chunks, chunkID)
 	}
+
+	// now reverse them, as we want them in playable order
+	for i, j := 0, len(chunks)-1; i < j; i, j = i+1, j-1 {
+		chunks[i], chunks[j] = chunks[j], chunks[i]
+	}
+
 	return chunks, nil
 }
 
