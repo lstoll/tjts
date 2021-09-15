@@ -76,6 +76,7 @@ var migrations = []migration{
 		SQL: `
 			create table chunks (
 				id integer primary key autoincrement,
+				sequence integer not null,
 				stream_id text not null,
 				chunk_id text not null,
 				fetched_at datetime not null,
