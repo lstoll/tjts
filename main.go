@@ -6,8 +6,6 @@ import (
 	"os"
 	"os/signal"
 	"time"
-
-	"github.com/lstoll/tjts"
 )
 
 // TripleJURL is HARDCODE
@@ -34,7 +32,7 @@ func main() {
 		port = "8080"
 	}
 
-	tc := tjts.NewClient(TripleJURL, 16384) // 64k
+	tc := NewClient(TripleJURL, 16384) // 64k
 	tchd := make(chan []byte, 512)
 	go func() {
 		if err := tc.Start(tchd); err != nil {
@@ -42,7 +40,7 @@ func main() {
 		}
 	}()
 
-	dc := tjts.NewClient(DoubleJURL, 16384) // 64 k
+	dc := NewClient(DoubleJURL, 16384) // 64 k
 	dchd := make(chan []byte, 512)
 	go func() {
 		if err := dc.Start(dchd); err != nil {
@@ -56,15 +54,15 @@ func main() {
 		djCache = cachePath + "/doublej.stream.cache"
 	}
 
-	tsh, err := tjts.NewMemShifter(tchd, 2*time.Second, 20*time.Hour, tjCache, cacheInterval)
+	tsh, err := NewMemShifter(tchd, 2*time.Second, 20*time.Hour, tjCache, cacheInterval)
 	if err != nil {
 		log.Fatalf("creating shifter: %v", err)
 	}
-	dsh, err := tjts.NewMemShifter(dchd, 2*time.Second, 20*time.Hour, djCache, cacheInterval)
+	dsh, err := NewMemShifter(dchd, 2*time.Second, 20*time.Hour, djCache, cacheInterval)
 	if err != nil {
 		log.Fatalf("creating shifter: %v", err)
 	}
-	s := tjts.NewServer()
+	s := NewServer()
 	s.AddEndpoint("doublej", dsh)
 	s.AddEndpoint("triplej", tsh)
 	go func() {

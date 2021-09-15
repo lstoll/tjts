@@ -1,4 +1,4 @@
-package tjts
+package main
 
 const IndexHTML = `
 <!DOCTYPE html>

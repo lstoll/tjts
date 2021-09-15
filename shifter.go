@@ -1,4 +1,4 @@
-package tjts
+package main
 
 import (
 	"log"
