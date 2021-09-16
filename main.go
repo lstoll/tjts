@@ -61,7 +61,12 @@ func main() {
 		l.WithError(err).Fatal("creating chunk store")
 	}
 
-	pl, err := newPlaylist(l, cfg.Streams, rec, ds)
+	ss, err := newSessionStore()
+	if err != nil {
+		l.WithError(err).Fatal("creating session store")
+	}
+
+	pl, err := newPlaylist(l, cfg.Streams, rec, ds, ss)
 	if err != nil {
 		l.WithError(err).Fatal("creating playlist")
 	}
