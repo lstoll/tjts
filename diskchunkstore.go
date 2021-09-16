@@ -33,8 +33,9 @@ func (d *diskChunkStore) FetcherStore(streamID string) (*stationChunkStore, erro
 		return nil, fmt.Errorf("creating %s: %v", od, err)
 	}
 	return &stationChunkStore{
-		path: od,
-		cr:   d.cr,
+		streamID: streamID,
+		path:     od,
+		cr:       d.cr,
 	}, nil
 }
 

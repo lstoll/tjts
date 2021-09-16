@@ -24,6 +24,10 @@ func (r *recorder) RecordChunk(ctx context.Context, streamID, chunkID string, du
 	// sequence ID has to be incrementing, per stream_id
 	// https://developer.apple.com/documentation/http_live_streaming/example_playlists_for_http_live_streaming/live_playlist_sliding_window_construction?language=objc
 
+	if streamID == "" || chunkID == "" {
+		return fmt.Errorf("streamID and chunkID cannot be empty")
+	}
+
 	_, err := r.db.ExecContext(ctx,
 		`insert into chunks(sequence, stream_id, chunk_id, duration, fetched_at)
 		select coalesce(max(sequence),0) + 1 as sequence, $1, $2, $3, $4 from chunks where stream_id = $5`,
