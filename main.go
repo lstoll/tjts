@@ -66,6 +66,8 @@ func main() {
 
 	idx := newIndex(l.WithField("component", "index"), cfg.Streams)
 
+	gc := newGarbageCollector(l.WithField("component", "gc"), db, ds)
+
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/m3u8", pl.ServePlaylist)
@@ -80,6 +82,8 @@ func main() {
 	var g run.Group
 
 	g.Add(run.SignalHandler(ctx, os.Interrupt))
+
+	g.Add(gc.Run, gc.Interrupt)
 
 	for _, s := range cfg.Streams {
 

@@ -43,6 +43,18 @@ func (d *diskChunkStore) URLFor(streamID, chunkID string) string {
 	return d.urlPrefix + "/" + streamID + "/" + chunkID
 }
 
+func (d *diskChunkStore) DeleteChunk(ctx context.Context, streamID, chunkID string) error {
+	cfn := filepath.Join(d.basePath, streamID, chunkID)
+	if err := os.Remove(cfn); err != nil {
+		if os.IsNotExist(err) {
+			// already gone
+			return nil
+		}
+		return fmt.Errorf("deleting %s: %v", cfn, err)
+	}
+	return nil
+}
+
 func (d *diskChunkStore) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	sp := strings.Split(r.URL.Path, "/")
 	if len(sp) != 2 {
