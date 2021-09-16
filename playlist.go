@@ -98,6 +98,7 @@ func (p *playlist) ServePlaylist(w http.ResponseWriter, r *http.Request) {
 		Sequence: sg[0].Sequence,
 		Version:  intPtr(3), // TODO - when would it not be?
 		Target:   avgDuration(sg),
+		Live:     true,
 	}
 
 	// TODO - build URL
