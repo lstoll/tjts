@@ -172,7 +172,7 @@ func (p *playlist) ServePlaylist(w http.ResponseWriter, r *http.Request) {
 		cids []string
 	)
 
-	for i := serveIdx; i < serveChunks+1; i++ {
+	for i := serveIdx; i < serveChunks+serveIdx; i++ {
 		s := rcs[i]
 		pl.AppendItem(&m3u8.SegmentItem{
 			Segment:  "/segment/" + sess.StreamID + "/" + s.ChunkID,
