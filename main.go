@@ -56,25 +56,13 @@ func main() {
 	}
 	defer db.Close()
 
-	rec, err := newRecorder(db)
-	if err != nil {
-		l.Fatal(err)
-	}
+	rec := newRecorder(db)
 
-	ds, err := newDiskChunkStore(rec, cfg.ChunkDir, "/segment")
-	if err != nil {
-		l.WithError(err).Fatal("creating chunk store")
-	}
+	ds := newDiskChunkStore(rec, cfg.ChunkDir, "/segment")
 
-	ss, err := newSessionStore(db)
-	if err != nil {
-		l.WithError(err).Fatal("creating session store")
-	}
+	ss := newSessionStore(db)
 
-	pl, err := newPlaylist(l.WithField("component", "playlist"), cfg.Streams, rec, ds, ss)
-	if err != nil {
-		l.WithError(err).Fatal("creating playlist")
-	}
+	pl := newPlaylist(l.WithField("component", "playlist"), cfg.Streams, rec, ds, ss)
 
 	idx := newIndex(l.WithField("component", "index"), cfg.Streams)
 
@@ -115,7 +103,7 @@ func main() {
 		// use a new context, as upstream will be canceled by now
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		srv.Shutdown(ctx)
+		_ = srv.Shutdown(ctx)
 	})
 
 	if err := g.Run(); err != nil {

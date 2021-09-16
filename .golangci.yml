@@ -13,7 +13,6 @@ issues:
 linters:
   enable:
     - errcheck
-    - golint
     - goimports
     - govet
     - misspell

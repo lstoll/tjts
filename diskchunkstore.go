@@ -18,12 +18,12 @@ type diskChunkStore struct {
 	cr        *recorder
 }
 
-func newDiskChunkStore(cr *recorder, basePath, urlPrefix string) (*diskChunkStore, error) {
+func newDiskChunkStore(cr *recorder, basePath, urlPrefix string) *diskChunkStore {
 	return &diskChunkStore{
 		basePath:  basePath,
 		urlPrefix: urlPrefix,
 		cr:        cr,
-	}, nil
+	}
 }
 
 // FetcherStore returns an individual storage for a given fetcher
@@ -74,8 +74,8 @@ func (s *stationChunkStore) WriteChunk(ctx context.Context, chunkName string, ch
 	return nil
 }
 
-func (d *stationChunkStore) ChunkExists(ctx context.Context, chunkName string) (bool, error) {
-	cfn := d.filename(chunkName)
+func (s *stationChunkStore) ChunkExists(_ context.Context, chunkName string) (bool, error) {
+	cfn := s.filename(chunkName)
 	if _, err := os.Stat(cfn); err != nil {
 		if os.IsNotExist(err) {
 			return false, nil

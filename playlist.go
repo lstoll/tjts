@@ -24,14 +24,14 @@ type playlist struct {
 	sess    *sessionStore
 }
 
-func newPlaylist(l logrus.FieldLogger, s []configStream, i *recorder, u *diskChunkStore, ss *sessionStore) (*playlist, error) {
+func newPlaylist(l logrus.FieldLogger, s []configStream, i *recorder, u *diskChunkStore, ss *sessionStore) *playlist {
 	return &playlist{
 		l:       l,
 		indexer: i,
 		streams: s,
 		mapper:  u,
 		sess:    ss,
-	}, nil
+	}
 }
 
 // ServePlaylist handles a request to build a m38u playlist for a stream

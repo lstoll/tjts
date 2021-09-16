@@ -16,8 +16,8 @@ type recorder struct {
 	db *sql.DB
 }
 
-func newRecorder(db *sql.DB) (*recorder, error) {
-	return &recorder{db: db}, nil
+func newRecorder(db *sql.DB) *recorder {
+	return &recorder{db: db}
 }
 
 func (r *recorder) RecordChunk(ctx context.Context, streamID, chunkID string, duration float64, timestamp time.Time) error {

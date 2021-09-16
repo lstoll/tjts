@@ -27,10 +27,10 @@ type sessionStore struct {
 	db *sql.DB
 }
 
-func newSessionStore(db *sql.DB) (*sessionStore, error) {
+func newSessionStore(db *sql.DB) *sessionStore {
 	return &sessionStore{
 		db: db,
-	}, nil
+	}
 }
 
 // Get fetches or initializes session data for a given session
