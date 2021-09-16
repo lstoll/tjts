@@ -88,8 +88,8 @@ func (r *recorder) SequenceFor(ctx context.Context, streamID string, before time
 
 func (r *recorder) Chunks(ctx context.Context, streamID string, startSequence int, num int) ([]recordedChunk, error) {
 	rows, err := r.db.QueryContext(ctx,
-		`select sequence, chunk_id, duration, fetched_at from chunks where sequence >= $1 order by sequence asc limit $2`,
-		startSequence, num,
+		`select sequence, chunk_id, duration, fetched_at from chunks where stream_id = $1 and sequence >= $2 order by sequence asc limit $3`,
+		streamID, startSequence, num,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("fetching sequences: %v", err)

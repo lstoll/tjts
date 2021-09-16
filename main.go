@@ -66,7 +66,7 @@ func main() {
 		l.WithError(err).Fatal("creating session store")
 	}
 
-	pl, err := newPlaylist(l, cfg.Streams, rec, ds, ss)
+	pl, err := newPlaylist(l.WithField("component", "playlist"), cfg.Streams, rec, ds, ss)
 	if err != nil {
 		l.WithError(err).Fatal("creating playlist")
 	}

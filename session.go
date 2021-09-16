@@ -9,14 +9,12 @@ import (
 //
 // TODO - back this on to something persistent, like the DB
 type sessionData struct {
-	// Offset tracks the time the stream is lagged
-	Offset time.Duration
-
-	// The goal is to keep things ticking forward, like after we show a new
-	// sequence, when it's past it's play time we should introduce a new one.
-
+	// LatestSequence shows the newest sequence we've served. This won't be the
+	// latest overall, but the sequence for the first media segment in the
+	// playlist (i.e what we set EXT-X-MEDIA-SEQUENCE to)
 	LatestSequence int
-	IntroducedAt   time.Time
+	// IntroducedAt records when we first saw it
+	IntroducedAt time.Time
 
 	StreamID string
 	Timezone string

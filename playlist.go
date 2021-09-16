@@ -3,12 +3,16 @@ package main
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/etherlabsio/go-m3u8/m3u8"
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 )
+
+// serveChunks are the number of chunks we send to a user
+const serveChunks = 3
 
 // playlist generates time shifted hls playlists from content
 type playlist struct {
@@ -34,37 +38,45 @@ func newPlaylist(l logrus.FieldLogger, s []configStream, i *recorder, u *diskChu
 func (p *playlist) ServePlaylist(w http.ResponseWriter, r *http.Request) {
 	p.l.Debugf("serving request for %s", r.URL.String())
 
-	stationID := r.URL.Query().Get("station")
-	tzStr := r.URL.Query().Get("tz")
 	now := time.Now()
-
-	var baseTZ string
-	for _, s := range p.streams {
-		if s.ID == stationID {
-			baseTZ = s.BaseTimezone
-		}
-	}
-	if baseTZ == "" {
-		http.Error(w, fmt.Sprintf("Station %s not found", stationID), http.StatusNotFound)
-		return
-	}
+	ctx := r.Context()
 
 	sid := r.URL.Query().Get("sid")
 	if sid == "" {
-		q := r.URL.Query()
-		q.Add("sid", uuid.New().String())
+		// start a new session, and switch to that URL
+		sid = uuid.New().String()
+		sess := sessionData{
+			StreamID: r.URL.Query().Get("station"),
+			Timezone: r.URL.Query().Get("tz"),
+		}
+		if sess.StreamID == "" || sess.Timezone == "" {
+			http.Error(w, "sid || station and tz must be present on query", http.StatusBadRequest)
+			return
+		}
+		if err := p.sess.Set(ctx, sid, sess); err != nil {
+			p.l.WithError(err).Error("initial set session")
+			http.Error(w, "Internal error", http.StatusBadRequest)
+			return
+		}
 		u := *r.URL
-		u.RawQuery = q.Encode()
+		u.RawQuery = (url.Values{"sid": []string{sid}}).Encode()
 		http.Redirect(w, r, u.String(), http.StatusSeeOther)
 		return
 	}
 
-	sess, err := p.sess.Get(r.Context(), sid)
+	sess, err := p.sess.Get(ctx, sid)
 	if err != nil {
 		p.l.WithError(err).Errorf("getting session %s", sid)
 		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
+	defer func() {
+		s := &sess
+		p.l.Debugf("updating session to %#v", *s)
+		if err := p.sess.Set(ctx, sid, *s); err != nil {
+			p.l.WithError(err).Error("updating session")
+		}
+	}()
 
 	// if the stream has no latest sequence, we want to find one. This will be
 	// either the sequence that corresponds to our offset time, or if we have no
@@ -75,15 +87,25 @@ func (p *playlist) ServePlaylist(w http.ResponseWriter, r *http.Request) {
 	// a couple newer items than it. If the latest sequence introduced at + it's
 	// duration is before now, drop it off, add some new sequences, and update
 	// the session.
-
-	if sess.Offset == 0 {
+	if sess.LatestSequence == 0 {
 		// We have no current offset, so calculate the difference between the
 		// same contrived time in the different timezones to figure their
-		// offset.
-		tz, err := time.LoadLocation(tzStr)
+		// offset. Use that to set a sequence
+		var baseTZ string
+		for _, s := range p.streams {
+			if s.ID == sess.StreamID {
+				baseTZ = s.BaseTimezone
+			}
+		}
+		if baseTZ == "" {
+			http.Error(w, fmt.Sprintf("Station %s not found", sess.StreamID), http.StatusNotFound)
+			return
+		}
+
+		tz, err := time.LoadLocation(sess.Timezone)
 		if err != nil {
-			p.l.WithError(err).Debugf("looking up user timezone %s", tzStr)
-			http.Error(w, fmt.Sprintf("Couldn't find timezone %s", tzStr), http.StatusBadRequest)
+			p.l.WithError(err).Debugf("looking up user timezone %s", sess.Timezone)
+			http.Error(w, fmt.Sprintf("Couldn't find timezone %s", sess.Timezone), http.StatusBadRequest)
 			return
 		}
 
@@ -98,41 +120,50 @@ func (p *playlist) ServePlaylist(w http.ResponseWriter, r *http.Request) {
 
 		bt := time.Date(1981, 12, 6, 01, 00, 00, 00, btz)
 
-		sess.Offset = t.Sub(bt)
+		offset := t.Sub(bt)
+
+		s, err := p.indexer.SequenceFor(ctx, sess.StreamID, now.Add(-offset))
+		if err != nil {
+			p.l.WithError(err).Errorf("getting sequence for %s", sess.StreamID)
+			http.Error(w, "Internal Error", http.StatusBadRequest)
+			return
+		}
+		sess.LatestSequence = s
+		sess.IntroducedAt = now
 	}
 
-	// now.Add(-sess.Offset)
-
-	// get the segments to serve up
-	sg, err := p.indexer.Chunks(r.Context(), stationID, 1, 3)
+	// grab some chunks from our latest sequence. Get extra, in case we have to shift forward
+	rcs, err := p.indexer.Chunks(ctx, sess.StreamID, sess.LatestSequence, serveChunks*2)
 	if err != nil {
 		p.l.WithError(err).Error("getting chunks")
 		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
 
-	if len(sg) < 1 {
-		p.l.Errorf("no chunks for %s", stationID)
+	if len(rcs) < serveChunks+1 {
+		p.l.Errorf("insufficient chunks for %s", sess.StreamID)
 		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
 
-	// use the actual returned chunk time to update the offset. Do this always,
-	// so even if we have holes in the stream we should hopefully re-calculat
-	// around it.
-	// TODO - validate this assumption, i've had some 🍷
-	sess.Offset = now.Sub(sg[0].FetchedAt)
-	if err := p.sess.Set(r.Context(), sid, sess); err != nil {
-		p.l.WithError(err).Error("updating session")
-		http.Error(w, "Internal error", http.StatusInternalServerError)
-		return
+	var serveIdx int
+
+	if rcs[0].Sequence != sess.LatestSequence {
+		// if the first sequence returned is not our latest sequence, move latest
+		// sequence to match.
+		sess.LatestSequence = rcs[0].Sequence
+	} else if sess.IntroducedAt.Before(now.Add(-time.Duration(rcs[0].Duration))) {
+		// we've moved beyond the last sequences time.  shift things forward.
+		sess.LatestSequence = rcs[1].Sequence
+		sess.IntroducedAt = now
+		serveIdx = 1
 	}
 
 	pl := m3u8.Playlist{
 		Cache:    boolPtr(true),
-		Sequence: sg[0].Sequence,
+		Sequence: sess.LatestSequence,
 		Version:  intPtr(4), // TODO - when would it not be?
-		Target:   maxDuration(sg),
+		Target:   maxDuration(rcs),
 		Live:     true,
 	}
 
@@ -141,16 +172,17 @@ func (p *playlist) ServePlaylist(w http.ResponseWriter, r *http.Request) {
 		cids []string
 	)
 
-	for _, s := range sg {
+	for i := serveIdx; i < serveChunks+1; i++ {
+		s := rcs[i]
 		pl.AppendItem(&m3u8.SegmentItem{
-			Segment:  "/segment/" + stationID + "/" + s.ChunkID,
+			Segment:  "/segment/" + sess.StreamID + "/" + s.ChunkID,
 			Duration: s.Duration,
 		})
 		sqs = append(sqs, s.Sequence)
 		cids = append(cids, s.ChunkID)
 	}
 
-	p.l.Debugf("serving playlist from offset %s with sequences %v chunks %v", sess.Offset.String(), sqs, cids)
+	p.l.Debugf("serving playlist from sequence %d with sequences %v chunks %v", sess.LatestSequence, sqs, cids)
 
 	w.Header().Set("content-type", "application/x-mpegURL")
 
