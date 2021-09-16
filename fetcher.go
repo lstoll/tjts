@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"path/filepath"
@@ -13,13 +12,6 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-type fetchChunkStore interface {
-	// WriteChunk should read fromt he provided reader, persisting it at the
-	// given id and name. It should be recallable by those keys
-	WriteChunk(ctx context.Context, chunkName string, chunkDuration float64, r io.Reader) error
-	ChunkExists(ctx context.Context, chunkName string) (bool, error)
-}
-
 // fetcher is a run group-compatible item that subscribes to a stream, and
 // fetches the data as needed. The data will be stored into a chunkStore, and an
 // indexManager will be used to track state
@@ -27,7 +19,7 @@ type fetcher struct {
 	l logrus.FieldLogger
 
 	hc *http.Client
-	cs fetchChunkStore
+	cs *stationChunkStore
 
 	url *url.URL
 
@@ -35,7 +27,7 @@ type fetcher struct {
 	ticker *time.Ticker
 }
 
-func newFetcher(l logrus.FieldLogger, cs fetchChunkStore, streamURL string) (*fetcher, error) {
+func newFetcher(l logrus.FieldLogger, cs *stationChunkStore, streamURL string) (*fetcher, error) {
 	hc := &http.Client{
 		Timeout: time.Second * 5,
 	}

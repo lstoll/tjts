@@ -11,21 +11,14 @@ import (
 	"time"
 )
 
-var _ fetchChunkStore = (*stationChunkStore)(nil)
-
-type chunkRecorder interface {
-	// RecordChunk is called to note that the given chunk was persisted from the given time
-	RecordChunk(ctx context.Context, streamID, chunkID string, duration float64, timestamp time.Time) error
-}
-
 // diskChunkStore manages persisting and serving chunks from disk
 type diskChunkStore struct {
 	basePath  string
 	urlPrefix string
-	cr        chunkRecorder
+	cr        *recorder
 }
 
-func newDiskChunkStore(cr chunkRecorder, basePath, urlPrefix string) (*diskChunkStore, error) {
+func newDiskChunkStore(cr *recorder, basePath, urlPrefix string) (*diskChunkStore, error) {
 	return &diskChunkStore{
 		basePath:  basePath,
 		urlPrefix: urlPrefix,
@@ -62,7 +55,7 @@ type stationChunkStore struct {
 	path     string
 	streamID string
 
-	cr chunkRecorder
+	cr *recorder
 }
 
 func (s *stationChunkStore) WriteChunk(ctx context.Context, chunkName string, chunkDuration float64, r io.Reader) error {

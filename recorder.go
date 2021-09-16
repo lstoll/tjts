@@ -10,11 +10,6 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-var (
-	_ chunkIndex    = (*recorder)(nil)
-	_ chunkRecorder = (*recorder)(nil)
-)
-
 // recorder maintains state metadata. It uses a sqlite DB - this is overkill for
 // now, but I do plan on adding additional stuff like tracking played songs so
 // it'll be a good base.

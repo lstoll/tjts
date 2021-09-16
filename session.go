@@ -11,6 +11,14 @@ import (
 type sessionData struct {
 	// Offset tracks the time the stream is lagged
 	Offset time.Duration
+
+	// The goal is to keep things ticking forward, like after we show a new
+	// sequence, when it's past it's play time we should introduce a new one.
+
+	LatestSequence int
+	IntroducedAt   time.Time
+
+	StreamID string
 }
 
 type sessionStore struct {

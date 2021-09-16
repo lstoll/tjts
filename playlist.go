@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"time"
@@ -11,33 +10,17 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-type chunkIndex interface {
-	// ChunksBefore should return the most recent num chunks before the given
-	// time. These should be in playable order, i.e ascending in time. If no
-	// chunks are before the given time, we should return the oldest existing
-	ChunksBefore(ctx context.Context, streamID string, before time.Time, num int) ([]recordedChunk, error)
-}
-
-type sessStore interface {
-	Get(ctx context.Context, sid string) (sessionData, error)
-	Set(ctx context.Context, sid string, d sessionData) error
-}
-
-type urlMapper interface {
-	URLFor(streamID, chunkID string) string
-}
-
 // playlist generates time shifted hls playlists from content
 type playlist struct {
 	l logrus.FieldLogger
 
-	indexer chunkIndex
-	mapper  urlMapper
+	indexer *recorder
+	mapper  *diskChunkStore
 	streams []configStream
-	sess    sessStore
+	sess    *sessionStore
 }
 
-func newPlaylist(l logrus.FieldLogger, s []configStream, i chunkIndex, u urlMapper, ss sessStore) (*playlist, error) {
+func newPlaylist(l logrus.FieldLogger, s []configStream, i *recorder, u *diskChunkStore, ss *sessionStore) (*playlist, error) {
 	return &playlist{
 		l:       l,
 		indexer: i,
@@ -82,6 +65,16 @@ func (p *playlist) ServePlaylist(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
+
+	// if the stream has no latest sequence, we want to find one. This will be
+	// either the sequence that corresponds to our offset time, or if we have no
+	// sequence older than that it'll be the oldest sequence.
+	//
+	// once we have a sequence, we want to save in the session the sequence ID
+	// and when it was seen. On subsequent requests, we grab that sequence plus
+	// a couple newer items than it. If the latest sequence introduced at + it's
+	// duration is before now, drop it off, add some new sequences, and update
+	// the session.
 
 	if sess.Offset == 0 {
 		// We have no current offset, so calculate the difference between the
