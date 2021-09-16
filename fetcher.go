@@ -4,19 +4,19 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"path/filepath"
 	"time"
 
 	"github.com/etherlabsio/go-m3u8/m3u8"
+	"github.com/sirupsen/logrus"
 )
 
-type chunkStore interface {
+type fetchChunkStore interface {
 	// WriteChunk should read fromt he provided reader, persisting it at the
 	// given id and name. It should be recallable by those keys
-	WriteChunk(ctx context.Context, chunkName string, r io.Reader) error
+	WriteChunk(ctx context.Context, chunkName string, chunkDuration float64, r io.Reader) error
 	ChunkExists(ctx context.Context, chunkName string) (bool, error)
 }
 
@@ -24,8 +24,10 @@ type chunkStore interface {
 // fetches the data as needed. The data will be stored into a chunkStore, and an
 // indexManager will be used to track state
 type fetcher struct {
+	l logrus.FieldLogger
+
 	hc *http.Client
-	cs chunkStore
+	cs fetchChunkStore
 
 	url *url.URL
 
@@ -33,14 +35,26 @@ type fetcher struct {
 	ticker *time.Ticker
 }
 
-func (f *fetcher) Run() error {
-	if f.hc == nil {
-		f.hc = http.DefaultClient
-	}
-	if f.stopC == nil {
-		f.stopC = make(chan struct{})
+func newFetcher(l logrus.FieldLogger, cs fetchChunkStore, streamURL string) (*fetcher, error) {
+	hc := &http.Client{
+		Timeout: time.Second * 5,
 	}
 
+	u, err := url.Parse(streamURL)
+	if err != nil {
+		return nil, fmt.Errorf("parsing %s: %v", streamURL, err)
+	}
+
+	return &fetcher{
+		l:     l,
+		hc:    hc,
+		url:   u,
+		cs:    cs,
+		stopC: make(chan struct{}),
+	}, nil
+}
+
+func (f *fetcher) Run() error {
 	pl, err := f.getPlaylist()
 	if err != nil {
 		return fmt.Errorf("getting initial playlist: %v", err)
@@ -56,13 +70,13 @@ func (f *fetcher) Run() error {
 			// we don't hard error in here, assume we will retry/recover
 			pl, err := f.getPlaylist()
 			if err != nil {
-				log.Printf("getting playlist: %v", err)
+				f.l.WithError(err).Warn("getting playlist")
 				continue
 			}
 
 			for _, s := range pl.Segments() {
 				if err := f.downloadSegment(s); err != nil {
-					log.Printf("downloading segment: %v", err)
+					f.l.WithError(err).Warn("downloading segment")
 					continue
 				}
 			}
@@ -104,11 +118,11 @@ func (f *fetcher) downloadSegment(s *m3u8.SegmentItem) error {
 		return fmt.Errorf("checking chunk existence: %v", err)
 	}
 	if ok {
-		log.Printf("chunk %s exists, skipping", cn)
+		f.l.Debugf("chunk %s exists, skipping", cn)
 		return nil
 	}
 
-	log.Printf("downloading chunk %s", cn)
+	f.l.Debugf("downloading chunk %s", cn)
 	r, err := f.hc.Get(s.Segment)
 	if err != nil {
 		return err
@@ -118,7 +132,7 @@ func (f *fetcher) downloadSegment(s *m3u8.SegmentItem) error {
 		return fmt.Errorf("wanted 200 from %s, got: %d", f.url.String(), r.StatusCode)
 	}
 
-	if err := f.cs.WriteChunk(context.TODO(), cn, r.Body); err != nil {
+	if err := f.cs.WriteChunk(context.TODO(), cn, s.Duration, r.Body); err != nil {
 		return fmt.Errorf("writing chunk: %v", err)
 	}
 

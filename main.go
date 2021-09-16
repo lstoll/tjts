@@ -3,48 +3,74 @@ package main
 import (
 	"context"
 	"flag"
-	"log"
+	"fmt"
 	"net/http"
-	"net/url"
 	"os"
+	"path/filepath"
 	"time"
 
 	// avoid having to bundle this in the docker image
 	_ "time/tzdata"
 
 	"github.com/oklog/run"
+	"github.com/sirupsen/logrus"
 )
 
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	l := logrus.New()
 
 	var (
-		listen     = flag.String("listen", "localhost:5000", "Address to listen on")
+		listen     = flag.String("listen", "localhost:8080", "Address to listen on")
 		configPath = flag.String("config", "", "path to config file")
+		debug      = flag.Bool("debug", false, "enable debug logging")
 	)
 	flag.Parse()
 
 	if *listen == "" {
-		log.Fatal("-listen must be provided")
+		l.Fatal("-listen must be provided")
 	}
 	if *configPath == "" {
-		log.Fatal("-config must be provided")
+		l.Fatal("-config must be provided")
+	}
+
+	if *debug {
+		l.Level = logrus.DebugLevel
+	} else {
+		l.Level = logrus.InfoLevel
 	}
 
 	cfg, err := loadAndValdiateConfig(*configPath)
 	if err != nil {
-		log.Fatal(err)
+		l.Fatal(err)
 	}
 
-	// TODO - ensure db exists/make it? avoid those out of memory errors
+	// ensure db exists/make it, to avoid those out of memory errors
+	if err := os.MkdirAll(filepath.Dir(cfg.DBPath), 0755); err != nil {
+		l.Fatalf("ensuring %s exists: %v", filepath.Dir(cfg.DBPath), err)
+	}
 
 	rec, err := newRecorder(cfg.DBPath)
 	if err != nil {
-		log.Fatal(err)
+		l.Fatal(err)
+	}
+
+	ds, err := newDiskChunkStore(rec, cfg.ChunkDir, "/segment")
+	if err != nil {
+		l.WithError(err).Fatal("creating chunk store")
+	}
+
+	pl, err := newPlaylist(l, cfg.Streams, rec, ds)
+	if err != nil {
+		l.WithError(err).Fatal("creating playlist")
 	}
 
 	mux := http.NewServeMux()
+
+	mux.HandleFunc("/m3u8", pl.ServePlaylist)
+	mux.Handle("/segment/", http.StripPrefix("/segment/", ds))
+	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) { fmt.Fprint(w, "greetings") })
 
 	srv := &http.Server{
 		Addr:    *listen,
@@ -56,30 +82,22 @@ func main() {
 	g.Add(run.SignalHandler(ctx, os.Interrupt))
 
 	for _, s := range cfg.Streams {
-		hc := &http.Client{
-			Timeout: time.Second * 5,
-		}
 
-		u, err := url.Parse(s.URL)
+		fcs, err := ds.FetcherStore(s.ID)
 		if err != nil {
-			log.Fatalf("parsing %s for %s: %v", s.URL, s.ID, err)
+			l.WithError(err).Fatalf("creating fetcher store for %s", s.ID)
 		}
 
-		dcs, err := newDiskChunkStore(rec, cfg.ChunkDir, s.ID)
+		f, err := newFetcher(l.WithField("component", "fetcher"), fcs, s.URL)
 		if err != nil {
-			log.Fatal(err)
-		}
-
-		f := &fetcher{
-			hc:  hc,
-			url: u,
-			cs:  dcs,
+			l.WithError(err).Fatal("creating fetcher")
 		}
 
 		g.Add(f.Run, f.Interrupt)
 	}
 
 	g.Add(func() error {
+		l.Infof("listening on %s", *listen)
 		return srv.ListenAndServe()
 	}, func(error) {
 		// use a new context, as upstream will be canceled by now
@@ -89,6 +107,6 @@ func main() {
 	})
 
 	if err := g.Run(); err != nil {
-		log.Fatal(err)
+		l.Fatal(err)
 	}
 }

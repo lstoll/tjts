@@ -7,42 +7,66 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
-var _ chunkStore = (*diskChunkStore)(nil)
+var _ fetchChunkStore = (*stationChunkStore)(nil)
 
 type chunkRecorder interface {
 	// RecordChunk is called to note that the given chunk was persisted from the given time
-	RecordChunk(ctx context.Context, streamID, chunkID string, timestamp time.Time) error
+	RecordChunk(ctx context.Context, streamID, chunkID string, duration float64, timestamp time.Time) error
 }
 
 // diskChunkStore manages persisting and serving chunks from disk
 type diskChunkStore struct {
-	basePath string
-	streamID string
-
-	cr chunkRecorder
-
-	hh http.Handler
+	basePath  string
+	urlPrefix string
+	cr        chunkRecorder
 }
 
-func newDiskChunkStore(cr chunkRecorder, basePath, streamID string) (*diskChunkStore, error) {
-	od := filepath.Join(basePath, streamID)
-	if err := os.MkdirAll(od, 0755); err != nil {
-		return nil, fmt.Errorf("creating %s: %v", od, err)
-	}
-
+func newDiskChunkStore(cr chunkRecorder, basePath, urlPrefix string) (*diskChunkStore, error) {
 	return &diskChunkStore{
-		basePath: basePath,
-		streamID: streamID,
-		cr:       cr,
-		hh:       http.FileServer(http.Dir(od)),
+		basePath:  basePath,
+		urlPrefix: urlPrefix,
+		cr:        cr,
 	}, nil
 }
 
-func (d *diskChunkStore) WriteChunk(ctx context.Context, chunkName string, r io.Reader) error {
-	cfn := d.filename(chunkName)
+// FetcherStore returns an individual storage for a given fetcher
+func (d *diskChunkStore) FetcherStore(streamID string) (*stationChunkStore, error) {
+	od := filepath.Join(d.basePath, streamID)
+	if err := os.MkdirAll(od, 0755); err != nil {
+		return nil, fmt.Errorf("creating %s: %v", od, err)
+	}
+	return &stationChunkStore{
+		path: od,
+		cr:   d.cr,
+	}, nil
+}
+
+func (d *diskChunkStore) URLFor(streamID, chunkID string) string {
+	return d.urlPrefix + "/" + streamID + "/" + chunkID
+}
+
+func (d *diskChunkStore) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	sp := strings.Split(r.URL.Path, "/")
+	if len(sp) != 2 {
+		http.Error(w, "Not Found", http.StatusNotFound)
+	}
+	// TODO - think about exploit opportunities here.
+	http.ServeFile(w, r, filepath.Join(d.basePath, sp[0], sp[1]))
+}
+
+type stationChunkStore struct {
+	path     string
+	streamID string
+
+	cr chunkRecorder
+}
+
+func (s *stationChunkStore) WriteChunk(ctx context.Context, chunkName string, chunkDuration float64, r io.Reader) error {
+	cfn := s.filename(chunkName)
 	f, err := os.Create(cfn)
 	if err != nil {
 		return fmt.Errorf("creating %s: %v", cfn, err)
@@ -50,13 +74,13 @@ func (d *diskChunkStore) WriteChunk(ctx context.Context, chunkName string, r io.
 	if _, err := io.Copy(f, r); err != nil {
 		return fmt.Errorf("copying data to %s: %v", cfn, err)
 	}
-	if err := d.cr.RecordChunk(ctx, d.streamID, cfn, time.Now()); err != nil {
+	if err := s.cr.RecordChunk(ctx, s.streamID, chunkName, chunkDuration, time.Now()); err != nil {
 		return fmt.Errorf("recording chunk: %v", err)
 	}
 	return nil
 }
 
-func (d *diskChunkStore) ChunkExists(ctx context.Context, chunkName string) (bool, error) {
+func (d *stationChunkStore) ChunkExists(ctx context.Context, chunkName string) (bool, error) {
 	cfn := d.filename(chunkName)
 	if _, err := os.Stat(cfn); err != nil {
 		if os.IsNotExist(err) {
@@ -67,11 +91,6 @@ func (d *diskChunkStore) ChunkExists(ctx context.Context, chunkName string) (boo
 	return true, nil
 }
 
-func (d *diskChunkStore) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// TODO - cache headers etc?
-	d.hh.ServeHTTP(w, r)
-}
-
-func (d *diskChunkStore) filename(chunkName string) string {
-	return filepath.Join(d.basePath, d.streamID, chunkName)
+func (s *stationChunkStore) filename(chunkName string) string {
+	return filepath.Join(s.path, chunkName)
 }

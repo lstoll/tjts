@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
 	"reflect"
 	"testing"
 	"time"
@@ -33,7 +32,7 @@ func TestChunkFrom(t *testing.T) {
 	now := time.Now()
 
 	for i := 1; i <= 20; i++ {
-		if err := r.RecordChunk(ctx, testStreamID, fmt.Sprintf("chunk-%d", i), now.Add(time.Second*10*time.Duration(i))); err != nil {
+		if err := r.RecordChunk(ctx, testStreamID, fmt.Sprintf("chunk-%d", i), 10, now.Add(time.Second*10*time.Duration(i))); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -51,7 +50,7 @@ func TestChunkFrom(t *testing.T) {
 	}
 
 	if len(got) != 3 {
-		log.Fatalf("want 3 chunks, got: %d", len(cs))
+		t.Fatalf("want 3 chunks, got: %d", len(cs))
 	}
 
 	want := []string{"chunk-7", "chunk-8", "chunk-9"}
@@ -71,7 +70,7 @@ func TestChunkFrom(t *testing.T) {
 	}
 
 	if len(got) != 3 {
-		log.Fatalf("want 3 chunks, got: %d", len(got))
+		t.Fatalf("want 3 chunks, got: %d", len(got))
 	}
 
 	want = []string{"chunk-1", "chunk-2", "chunk-3"}
@@ -106,7 +105,7 @@ func TestChunkRecording(t *testing.T) {
 		go func(sn string) {
 			defer func() { done <- struct{}{} }()
 			for i := 1; i <= 5; i++ {
-				if err := r.RecordChunk(ctx, sn, fmt.Sprintf("chunk-%d", i), now.Add(time.Second*10*time.Duration(i))); err != nil {
+				if err := r.RecordChunk(ctx, sn, fmt.Sprintf("chunk-%d", i), 10, now.Add(time.Second*10*time.Duration(i))); err != nil {
 					ierrs = append(ierrs, err)
 				}
 			}
@@ -117,7 +116,7 @@ func TestChunkRecording(t *testing.T) {
 	<-done
 
 	for _, err := range ierrs {
-		log.Fatal(err)
+		t.Fatal(err)
 	}
 
 	for _, sn := range []string{streamOne, streamTwo} {

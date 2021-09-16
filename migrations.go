@@ -72,13 +72,14 @@ func (r *recorder) migrate(ctx context.Context) error {
 // migrations are run in the order presented here
 var migrations = []migration{
 	{
-		Idx: 202006141339,
+		Idx: 202109151300,
 		SQL: `
 			create table chunks (
 				id integer primary key autoincrement,
 				sequence integer not null,
 				stream_id text not null,
 				chunk_id text not null,
+				duration real not null,
 				fetched_at datetime not null,
 				unique (stream_id, chunk_id)
 			);

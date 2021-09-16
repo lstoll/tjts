@@ -48,14 +48,14 @@ func (r *recorder) Close() {
 	r.db.Close()
 }
 
-func (r *recorder) RecordChunk(ctx context.Context, streamID, chunkID string, timestamp time.Time) error {
+func (r *recorder) RecordChunk(ctx context.Context, streamID, chunkID string, duration float64, timestamp time.Time) error {
 	// sequence ID has to be incrementing, per stream_id
 	// https://developer.apple.com/documentation/http_live_streaming/example_playlists_for_http_live_streaming/live_playlist_sliding_window_construction?language=objc
 
 	_, err := r.db.ExecContext(ctx,
-		`insert into chunks(sequence, stream_id, chunk_id, fetched_at)
-		select coalesce(max(sequence),0) + 1 as sequence, $1, $2, $3 from chunks where stream_id = $4`,
-		streamID, chunkID, timestamp.UTC(), streamID)
+		`insert into chunks(sequence, stream_id, chunk_id, duration, fetched_at)
+		select coalesce(max(sequence),0) + 1 as sequence, $1, $2, $3, $4 from chunks where stream_id = $5`,
+		streamID, chunkID, duration, timestamp.UTC(), streamID)
 	if err != nil {
 		return fmt.Errorf("inserting chunk %s/%v: %v", streamID, chunkID, err)
 	}
@@ -65,6 +65,7 @@ func (r *recorder) RecordChunk(ctx context.Context, streamID, chunkID string, ti
 type recordedChunk struct {
 	Sequence  int
 	ChunkID   string
+	Duration  float64
 	FetchedAt time.Time
 }
 
@@ -89,14 +90,14 @@ func (r *recorder) ChunksBefore(ctx context.Context, streamID string, before tim
 	if count < num {
 		// just get the oldest
 		rows, err = r.db.QueryContext(ctx,
-			`select sequence, chunk_id, fetched_at from chunks where stream_id = $1 order by fetched_at asc limit $2`,
+			`select sequence, chunk_id, duration, fetched_at from chunks where stream_id = $1 order by fetched_at asc limit $2`,
 			streamID, num,
 		)
 		reverse = false // already ascending
 	} else {
 		// get what we want
 		rows, err = r.db.QueryContext(ctx,
-			`select sequence, chunk_id, fetched_at from chunks where stream_id = $1 and fetched_at < $2 order by fetched_at desc limit $3`,
+			`select sequence, chunk_id, duration, fetched_at from chunks where stream_id = $1 and fetched_at < $2 order by fetched_at desc limit $3`,
 			streamID, before.UTC(), num,
 		)
 		reverse = true // we had to descend to get the time, so need to flip 'em
@@ -111,7 +112,7 @@ func (r *recorder) ChunksBefore(ctx context.Context, streamID string, before tim
 	for rows.Next() {
 		var r recordedChunk
 
-		if err := rows.Scan(&r.Sequence, &r.ChunkID, &r.FetchedAt); err != nil {
+		if err := rows.Scan(&r.Sequence, &r.ChunkID, &r.Duration, &r.FetchedAt); err != nil {
 			return nil, fmt.Errorf("scanning row: %v", err)
 		}
 
