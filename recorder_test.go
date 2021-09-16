@@ -16,7 +16,7 @@ func TestDBOpen(t *testing.T) {
 	defer r.Close()
 }
 
-func TestChunkFrom(t *testing.T) {
+func TestSequenceFor(t *testing.T) {
 	ctx := context.Background()
 
 	const (
@@ -40,7 +40,50 @@ func TestChunkFrom(t *testing.T) {
 	// move now forward until the "end" of the recorded chunks
 	now = now.Add(20 * 10 * time.Second)
 
-	cs, err := r.ChunksBefore(ctx, testStreamID, now.Add(-101*time.Second), 3)
+	seq, err := r.SequenceFor(ctx, testStreamID, now.Add(-101*time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if seq != 9 {
+		t.Fatalf("want seq 9, got: %d", seq)
+	}
+
+	seq, err = r.SequenceFor(ctx, testStreamID, now.Add(-1*time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if seq != 1 {
+		t.Fatalf("want seq 1, got: %d", seq)
+	}
+}
+
+func TestChunks(t *testing.T) {
+	ctx := context.Background()
+
+	const (
+		testStreamID = "sid"
+	)
+
+	r, err := newRecorder(t.TempDir() + "/db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+
+	now := time.Now()
+
+	for i := 1; i <= 20; i++ {
+		if err := r.RecordChunk(ctx, testStreamID, fmt.Sprintf("chunk-%d", i), 10, now.Add(time.Second*10*time.Duration(i))); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// move now forward until the "end" of the recorded chunks
+	now = now.Add(20 * 10 * time.Second)
+
+	cs, err := r.Chunks(ctx, testStreamID, 10, 3)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,27 +96,7 @@ func TestChunkFrom(t *testing.T) {
 		t.Fatalf("want 3 chunks, got: %d", len(cs))
 	}
 
-	want := []string{"chunk-7", "chunk-8", "chunk-9"}
-	if !reflect.DeepEqual(want, got) {
-		t.Errorf("want %#v got %#v", want, got)
-	}
-
-	got = []string{}
-
-	cs, err = r.ChunksBefore(ctx, testStreamID, now.Add(-1*time.Hour), 3)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	for _, c := range cs {
-		got = append(got, c.ChunkID)
-	}
-
-	if len(got) != 3 {
-		t.Fatalf("want 3 chunks, got: %d", len(got))
-	}
-
-	want = []string{"chunk-1", "chunk-2", "chunk-3"}
+	want := []string{"chunk-10", "chunk-11", "chunk-12"}
 	if !reflect.DeepEqual(want, got) {
 		t.Errorf("want %#v got %#v", want, got)
 	}

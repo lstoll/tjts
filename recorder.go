@@ -64,41 +64,35 @@ type recordedChunk struct {
 	FetchedAt time.Time
 }
 
-func (r *recorder) ChunksBefore(ctx context.Context, streamID string, before time.Time, num int) ([]recordedChunk, error) {
+// SequenceFor returns the appropriate streaming start sequence for the given
+// stream. This will either be the sequence right before the before time, of if
+// we don't have one of those it will be the oldest sequence.
+func (r *recorder) SequenceFor(ctx context.Context, streamID string, before time.Time) (int, error) {
 	before = before.UTC()
 
-	// We always want something. If we don't find anything matching the query, return the oldest
-
-	var count int
-	if err := r.db.QueryRowContext(ctx,
-		`select count(sequence) from chunks where stream_id = $1 and fetched_at < $2`,
-		streamID, before).Scan(&count); err != nil {
-		return nil, fmt.Errorf("counting rows: %v", err)
+	var seq int
+	err := r.db.QueryRowContext(ctx,
+		`select sequence from chunks where stream_id = $1 and fetched_at < $2 order by fetched_at desc limit 1`,
+		streamID, before).Scan(&seq)
+	if err == sql.ErrNoRows {
+		if err := r.db.QueryRowContext(ctx,
+			`select sequence from chunks where stream_id = $1 order by fetched_at asc limit 1`,
+			streamID).Scan(&seq); err != nil {
+			return -1, fmt.Errorf("getting oldest sequence: %v", err)
+		}
+	} else if err != nil {
+		return -1, fmt.Errorf("getting sequence before time: %v", err)
 	}
+	return seq, nil
+}
 
-	var (
-		rows    *sql.Rows
-		err     error
-		reverse bool
+func (r *recorder) Chunks(ctx context.Context, streamID string, startSequence int, num int) ([]recordedChunk, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`select sequence, chunk_id, duration, fetched_at from chunks where sequence >= $1 order by sequence asc limit $2`,
+		startSequence, num,
 	)
-
-	if count < num {
-		// just get the oldest
-		rows, err = r.db.QueryContext(ctx,
-			`select sequence, chunk_id, duration, fetched_at from chunks where stream_id = $1 order by fetched_at asc limit $2`,
-			streamID, num,
-		)
-		reverse = false // already ascending
-	} else {
-		// get what we want
-		rows, err = r.db.QueryContext(ctx,
-			`select sequence, chunk_id, duration, fetched_at from chunks where stream_id = $1 and fetched_at < $2 order by fetched_at desc limit $3`,
-			streamID, before.UTC(), num,
-		)
-		reverse = true // we had to descend to get the time, so need to flip 'em
-	}
 	if err != nil {
-		return nil, fmt.Errorf("getting chunks: %v", err)
+		return nil, fmt.Errorf("fetching sequences: %v", err)
 	}
 
 	var ret []recordedChunk
@@ -112,12 +106,6 @@ func (r *recorder) ChunksBefore(ctx context.Context, streamID string, before tim
 		}
 
 		ret = append(ret, r)
-	}
-
-	if reverse {
-		for i, j := 0, len(ret)-1; i < j; i, j = i+1, j-1 {
-			ret[i], ret[j] = ret[j], ret[i]
-		}
 	}
 
 	return ret, nil

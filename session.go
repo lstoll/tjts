@@ -19,6 +19,7 @@ type sessionData struct {
 	IntroducedAt   time.Time
 
 	StreamID string
+	Timezone string
 }
 
 type sessionStore struct {

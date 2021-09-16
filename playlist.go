@@ -101,8 +101,10 @@ func (p *playlist) ServePlaylist(w http.ResponseWriter, r *http.Request) {
 		sess.Offset = t.Sub(bt)
 	}
 
+	// now.Add(-sess.Offset)
+
 	// get the segments to serve up
-	sg, err := p.indexer.ChunksBefore(r.Context(), stationID, now.Add(-sess.Offset), 3)
+	sg, err := p.indexer.Chunks(r.Context(), stationID, 1, 3)
 	if err != nil {
 		p.l.WithError(err).Error("getting chunks")
 		http.Error(w, "Internal error", http.StatusInternalServerError)
