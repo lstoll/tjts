@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Radio in your TZ</title>
+    <!-- TODO https://github.com/video-dev/hls.js/ ? -->
+    <p>(safari only)</p>
+    <script type="text/javascript">
+      var locTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      var tstreamURL = window.location.href + "triplej?tz=" + encodeURIComponent(locTz);
+      var dstreamURL = window.location.href + "doublej?tz=" + encodeURIComponent(locTz);
+      window.onload = function() {
+          var tzspan = document.getElementById("detectedtz");
+          tzspan.innerHTML = locTz
+
+{{ range $index, $element := .Streams }}
+          var {{ .JSID }}baseURL = window.location.origin + {{ .URL }}
+          var {{ .JSID }}streamURL = {{ .JSID }}baseURL + "&tz=" + encodeURIComponent(locTz)
+          document.getElementById("{{ .JSID }}url").innerHTML = {{ .JSID }}streamURL;
+          document.getElementById("{{ .JSID }}player").src = {{ .JSID }}streamURL;
+{{ end }}
+      }
+    </script>
+  </head>
+  <body>
+    <h1>Timezone: <span id="detectedtz"></span></h1>
+{{ range $index, $element := .Streams }}
+    <h2>{{ .Name }} offset to your TZ</h2>
+    <p>Stream URL for detected TZ: <span id="{{ .JSID }}url"></span></p>
+    <audio id="{{ .JSID }}player" type="application/x-mpegURL" controls></audio>
+{{ end }}
+  </body>
+</html>

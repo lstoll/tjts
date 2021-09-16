@@ -34,7 +34,7 @@ func newPlaylist(l logrus.FieldLogger, s []configStream, i *recorder, u *diskChu
 	}, nil
 }
 
-// ServePlaylist handles a request to build a m38u playlist for a station
+// ServePlaylist handles a request to build a m38u playlist for a stream
 func (p *playlist) ServePlaylist(w http.ResponseWriter, r *http.Request) {
 	p.l.Debugf("serving request for %s", r.URL.String())
 
@@ -46,11 +46,11 @@ func (p *playlist) ServePlaylist(w http.ResponseWriter, r *http.Request) {
 		// start a new session, and switch to that URL
 		sid = uuid.New().String()
 		sess := sessionData{
-			StreamID: r.URL.Query().Get("station"),
+			StreamID: r.URL.Query().Get("stream"),
 			Timezone: r.URL.Query().Get("tz"),
 		}
 		if sess.StreamID == "" || sess.Timezone == "" {
-			http.Error(w, "sid || station and tz must be present on query", http.StatusBadRequest)
+			http.Error(w, "sid || stream and tz must be present on query", http.StatusBadRequest)
 			return
 		}
 		if err := p.sess.Set(ctx, sid, sess); err != nil {
@@ -98,7 +98,7 @@ func (p *playlist) ServePlaylist(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if baseTZ == "" {
-			http.Error(w, fmt.Sprintf("Station %s not found", sess.StreamID), http.StatusNotFound)
+			http.Error(w, fmt.Sprintf("Stream %s not found", sess.StreamID), http.StatusNotFound)
 			return
 		}
 

@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"flag"
-	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -77,11 +76,13 @@ func main() {
 		l.WithError(err).Fatal("creating playlist")
 	}
 
+	idx := newIndex(l.WithField("component", "index"), cfg.Streams)
+
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/m3u8", pl.ServePlaylist)
 	mux.Handle("/segment/", http.StripPrefix("/segment/", ds))
-	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) { fmt.Fprint(w, "greetings") })
+	mux.Handle("/", idx)
 
 	srv := &http.Server{
 		Addr:    *listen,
