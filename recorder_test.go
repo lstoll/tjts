@@ -8,14 +8,6 @@ import (
 	"time"
 )
 
-func TestDBOpen(t *testing.T) {
-	r, err := newRecorder(t.TempDir() + "/db")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer r.Close()
-}
-
 func TestSequenceFor(t *testing.T) {
 	ctx := context.Background()
 
@@ -23,11 +15,12 @@ func TestSequenceFor(t *testing.T) {
 		testStreamID = "sid"
 	)
 
-	r, err := newRecorder(t.TempDir() + "/db")
+	db, err := newDB(t.TempDir() + "/db")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer r.Close()
+	defer db.Close()
+	r := &recorder{db: db}
 
 	now := time.Now()
 
@@ -66,11 +59,12 @@ func TestChunks(t *testing.T) {
 		testStreamID = "sid"
 	)
 
-	r, err := newRecorder(t.TempDir() + "/db")
+	db, err := newDB(t.TempDir() + "/db")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer r.Close()
+	defer db.Close()
+	r := &recorder{db: db}
 
 	now := time.Now()
 
@@ -110,12 +104,12 @@ func TestChunkRecording(t *testing.T) {
 		streamTwo = "s-2"
 	)
 
-	dbPath := t.TempDir() + "/db"
-	r, err := newRecorder(dbPath)
+	db, err := newDB(t.TempDir() + "/db")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer r.Close()
+	defer db.Close()
+	r := &recorder{db: db}
 
 	now := time.Now()
 

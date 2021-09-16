@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -17,30 +16,8 @@ type recorder struct {
 	db *sql.DB
 }
 
-func newRecorder(dbPath string) (*recorder, error) {
-	db, err := sql.Open("sqlite", dbPath)
-	if err != nil {
-		return nil, fmt.Errorf("opening DB at %s: %v", dbPath, err)
-	}
-
-	if err := integrityCheck(context.TODO(), db); err != nil {
-		return nil, fmt.Errorf("integrity check of %s failed: %v", dbPath, err)
-	}
-
-	r := &recorder{
-		db: db,
-	}
-
-	if err := r.migrate(context.TODO()); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("migrating db: %v", err)
-	}
-
-	return r, nil
-}
-
-func (r *recorder) Close() {
-	r.db.Close()
+func newRecorder(db *sql.DB) (*recorder, error) {
+	return &recorder{db: db}, nil
 }
 
 func (r *recorder) RecordChunk(ctx context.Context, streamID, chunkID string, duration float64, timestamp time.Time) error {
@@ -109,47 +86,4 @@ func (r *recorder) Chunks(ctx context.Context, streamID string, startSequence in
 	}
 
 	return ret, nil
-}
-
-func (r *recorder) execTx(ctx context.Context, f func(ctx context.Context, tx *sql.Tx) error) error {
-	tx, err := r.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-
-	if err := f(ctx, tx); err != nil {
-		// Not much we can do about an error here, but at least the database will
-		// eventually cancel it on its own if it fails
-		_ = tx.Rollback()
-		return err
-	}
-
-	return tx.Commit()
-}
-
-func integrityCheck(ctx context.Context, conn *sql.DB) error {
-	// https://www.sqlite.org/pragma.html#pragma_integrity_check
-	rows, err := conn.QueryContext(ctx, "PRAGMA integrity_check;")
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-
-	var res []string
-	for rows.Next() {
-		var val string
-		if err := rows.Scan(&val); err != nil {
-			return err
-		}
-		res = append(res, val)
-	}
-	if err := rows.Err(); err != nil {
-		return err
-	}
-
-	if len(res) == 1 && res[0] == "ok" {
-		return nil
-	}
-
-	return fmt.Errorf("integrity problems: %s", strings.Join(res, ", "))
 }

@@ -51,7 +51,13 @@ func main() {
 		l.Fatalf("ensuring %s exists: %v", filepath.Dir(cfg.DBPath), err)
 	}
 
-	rec, err := newRecorder(cfg.DBPath)
+	db, err := newDB(cfg.DBPath)
+	if err != nil {
+		l.WithError(err).Fatalf("opening database at %s", cfg.DBPath)
+	}
+	defer db.Close()
+
+	rec, err := newRecorder(db)
 	if err != nil {
 		l.Fatal(err)
 	}
@@ -61,7 +67,7 @@ func main() {
 		l.WithError(err).Fatal("creating chunk store")
 	}
 
-	ss, err := newSessionStore()
+	ss, err := newSessionStore(db)
 	if err != nil {
 		l.WithError(err).Fatal("creating session store")
 	}
