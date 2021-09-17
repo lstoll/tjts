@@ -130,7 +130,9 @@ func (i *icyServer) ServeIcecast(w http.ResponseWriter, r *http.Request) {
 			// we've served our initial buffer, sleep for the chunk until it's time for the next one.
 			// deduct 1ms from the serve time to kinda account for the processing time above. this is
 			// pretty inaccurate, but good enough here
-			time.Sleep(cd - 1*time.Millisecond)
+			//
+			// TODO - use better time keeping here, like just track last served time and increment or w/e
+			time.Sleep(cd - 100*time.Millisecond)
 		}
 
 		// increment sequence + serve time
