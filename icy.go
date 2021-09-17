@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/Comcast/gots/packet"
+	"github.com/Comcast/gots/pes"
+	"github.com/Comcast/gots/psi"
 	"github.com/sirupsen/logrus"
 )
 
@@ -34,6 +36,7 @@ func (i *icyServer) ServeIcecast(w http.ResponseWriter, r *http.Request) {
 	i.l.Debugf("serving request for %s", r.URL.String())
 
 	ctx := r.Context()
+	l := i.l
 	now := time.Now()
 
 	streamID := r.URL.Query().Get("stream")
@@ -43,6 +46,8 @@ func (i *icyServer) ServeIcecast(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "stream and tz must be present on query", http.StatusBadRequest)
 		return
 	}
+
+	l = l.WithField("stream", streamID).WithField("tz", tzStr)
 
 	var baseTZ string
 	var stationName string
@@ -59,16 +64,16 @@ func (i *icyServer) ServeIcecast(w http.ResponseWriter, r *http.Request) {
 
 	offset, err := offsetForTimezone(baseTZ, tzStr)
 	if err != nil {
-		i.l.WithError(err).Debugf("finding offset")
+		l.WithError(err).Debugf("finding offset")
 		http.Error(w, fmt.Sprintf("Error calculating offset: %s", err.Error()), http.StatusBadRequest)
 		return
 	}
 
-	i.l.Debugf("offset %s", offset.String())
+	l.Debugf("offset %s", offset.String())
 
 	s, err := i.indexer.SequenceFor(ctx, streamID, now.Add(-offset))
 	if err != nil {
-		i.l.WithError(err).Errorf("getting sequence for %s", streamID)
+		l.WithError(err).Errorf("getting sequence for %s", streamID)
 		http.Error(w, "Internal Error", http.StatusBadRequest)
 		return
 	}
@@ -87,51 +92,107 @@ func (i *icyServer) ServeIcecast(w http.ResponseWriter, r *http.Request) {
 	for {
 		select {
 		case <-ctx.Done():
-			i.l.Debug("context done")
+			l.Debug("context done")
 			return
 		case <-nextRun.C:
 			st := time.Now()
 
 			rcs, err := i.indexer.Chunks(ctx, streamID, s, 1)
 			if err != nil {
-				i.l.WithError(err).Errorf("getting 1 chunk from %d", s)
+				l.WithError(err).Errorf("getting 1 chunk from %d", s)
 				http.Error(w, "Internal Error", http.StatusBadRequest)
 				return
 			}
 			if len(rcs) < 1 {
-				i.l.Warnf("got no chunks for %s", streamID)
+				l.Warnf("got no chunks")
 				http.Error(w, "Internal Error", http.StatusBadRequest)
 				return
 			}
 			c := rcs[0]
 
+			l = l.WithField("seq", c.Sequence).WithField("cid", c.ChunkID)
+
 			cr, err := i.mapper.ReaderFor(streamID, c.ChunkID)
 			if err != nil {
-				i.l.WithError(err).Errorf("getting %s chunk reader", streamID)
+				l.WithError(err).Error("getting chunk reader")
 				http.Error(w, "Internal Error", http.StatusBadRequest)
 				return
 			}
 
-			i.l.Debugf("s: %d gotSeq %d servedTime %s", s, c.Sequence, servedTime.String())
+			l.Debugf("s: %d gotSeq %d servedTime %s", s, c.Sequence, servedTime.String())
+
+			// refs:
+			// * https://tsduck.io/download/docs/mpegts-introduction.pdf
+
+			// TODO - this is 100% filled with hardcoded assumptions about the
+			// stream. We need to determing the right thing to demux by using
+			// the stream map, and also do some checking on the PES header data
+			// to make sure we're extracting the right shit
+
+			pat, err := psi.ReadPAT(cr)
+			if err != nil {
+				l.WithError(err).Error("getting pat")
+				http.Error(w, "Internal Error", http.StatusBadRequest)
+				return
+			}
+			_ = pat
+			// l.Debugf("pat %#v", pat)
+
+			const audioPid = 256
 
 			var pkt packet.Packet
 			for read, err := cr.Read(pkt[:]); read > 0 && err == nil; read, err = cr.Read(pkt[:]) {
 				if err != nil {
-					i.l.WithError(err).Error("reading packet")
+					l.WithError(err).Error("reading packet")
 					http.Error(w, "Internal Error", http.StatusBadRequest)
 					return
 				}
-				// i.l.Debugf("got packet pid %d", packet.Pid(&pkt))
-				p, err := packet.Payload(&pkt)
-				if err != nil {
-					i.l.WithError(err).Errorf("reading packet %d payload", packet.Pid(&pkt))
-					http.Error(w, "Internal Error", http.StatusBadRequest)
-					return
+				if packet.Pid(&pkt) != audioPid {
+					// skip non aac stream
+					continue
 				}
-				if _, err := w.Write(p); err != nil {
-					i.l.WithError(err).Error("writing packet")
-					http.Error(w, "Internal Error", http.StatusBadRequest)
-					return
+				if !pkt.HasPayload() {
+					// skip, nothing to stream
+					continue
+				}
+
+				// if we're here, we're running on the right packet ID stream
+
+				if packet.PayloadUnitStartIndicator(&pkt) {
+					// assume a PES header, extract it and return the data
+					ph, err := packet.PESHeader(&pkt)
+					if err != nil {
+						l.WithError(err).Errorf("getting packet header")
+						http.Error(w, "Internal Error", http.StatusBadRequest)
+						return
+					}
+					pes, err := pes.NewPESHeader(ph)
+					if err != nil {
+						l.WithError(err).Errorf("creating pes header")
+						http.Error(w, "Internal Error", http.StatusBadRequest)
+						return
+					}
+					if _, err := w.Write(pes.Data()); err != nil {
+						l.WithError(err).Error("writing packet")
+						http.Error(w, "Internal Error", http.StatusBadRequest)
+						return
+					}
+				} else {
+					// otherwise assume a continuation from the last pes header,
+					// so just stream it
+
+					pl, err := pkt.Payload()
+					if err != nil {
+						l.WithError(err).Error("getting packet payload")
+						http.Error(w, "Internal Error", http.StatusBadRequest)
+						return
+					}
+
+					if _, err := w.Write(pl); err != nil {
+						l.WithError(err).Error("writing packet")
+						http.Error(w, "Internal Error", http.StatusBadRequest)
+						return
+					}
 				}
 			}
 
