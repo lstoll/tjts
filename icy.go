@@ -198,6 +198,10 @@ func (i *icyServer) ServeIcecast(w http.ResponseWriter, r *http.Request) {
 
 			cd := time.Duration(c.Duration * float64(time.Second))
 
+			// increment sequence + serve time
+			s = c.Sequence + 1
+			servedTime = servedTime + cd
+
 			var sleepTime time.Duration
 
 			if servedTime >= initialIcyServe {
@@ -212,10 +216,6 @@ func (i *icyServer) ServeIcecast(w http.ResponseWriter, r *http.Request) {
 			}
 
 			nextRun.Reset(sleepTime)
-
-			// increment sequence + serve time
-			s = c.Sequence + 1
-			servedTime = servedTime + cd
 		}
 	}
 }

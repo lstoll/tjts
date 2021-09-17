@@ -50,8 +50,7 @@ func (g *garbageCollector) Run() error {
 		select {
 		case <-g.ticker.C:
 			if err := g.collect(); err != nil {
-				g.l.WithError(err).Warn("getting playlist")
-				continue
+				return fmt.Errorf("running gc: %v", err)
 			}
 		case <-g.stopC:
 			return nil
