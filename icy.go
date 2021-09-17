@@ -80,63 +80,79 @@ func (i *icyServer) ServeIcecast(w http.ResponseWriter, r *http.Request) {
 	// with the first few chunks
 	var servedTime time.Duration
 
+	nextRun := time.NewTimer(0)
+
 	for {
-		rcs, err := i.indexer.Chunks(ctx, streamID, s, 1)
-		if err != nil {
-			i.l.WithError(err).Errorf("getting 1 chunk from %d", s)
-			http.Error(w, "Internal Error", http.StatusBadRequest)
+		select {
+		case <-ctx.Done():
+			i.l.Debug("context done")
 			return
-		}
-		if len(rcs) < 1 {
-			i.l.Warnf("got no chunks for %s", streamID)
-			http.Error(w, "Internal Error", http.StatusBadRequest)
-			return
-		}
-		c := rcs[0]
+		case <-nextRun.C:
+			st := time.Now()
 
-		cr, err := i.mapper.ReaderFor(streamID, c.ChunkID)
-		if err != nil {
-			i.l.WithError(err).Errorf("getting %s chunk reader", streamID)
-			http.Error(w, "Internal Error", http.StatusBadRequest)
-			return
-		}
-
-		i.l.Debugf("s: %d gotSeq %d servedTime %s", s, c.Sequence, servedTime.String())
-
-		var pkt packet.Packet
-		for read, err := cr.Read(pkt[:]); read > 0 && err == nil; read, err = cr.Read(pkt[:]) {
+			rcs, err := i.indexer.Chunks(ctx, streamID, s, 1)
 			if err != nil {
-				i.l.WithError(err).Error("reading packet")
+				i.l.WithError(err).Errorf("getting 1 chunk from %d", s)
 				http.Error(w, "Internal Error", http.StatusBadRequest)
 				return
 			}
-			// i.l.Debugf("got packet pid %d", packet.Pid(&pkt))
-			p, err := packet.Payload(&pkt)
+			if len(rcs) < 1 {
+				i.l.Warnf("got no chunks for %s", streamID)
+				http.Error(w, "Internal Error", http.StatusBadRequest)
+				return
+			}
+			c := rcs[0]
+
+			cr, err := i.mapper.ReaderFor(streamID, c.ChunkID)
 			if err != nil {
-				i.l.WithError(err).Errorf("reading packet %d payload", packet.Pid(&pkt))
+				i.l.WithError(err).Errorf("getting %s chunk reader", streamID)
 				http.Error(w, "Internal Error", http.StatusBadRequest)
 				return
 			}
-			if _, err := w.Write(p); err != nil {
-				i.l.WithError(err).Error("writing packet")
-				http.Error(w, "Internal Error", http.StatusBadRequest)
-				return
+
+			i.l.Debugf("s: %d gotSeq %d servedTime %s", s, c.Sequence, servedTime.String())
+
+			var pkt packet.Packet
+			for read, err := cr.Read(pkt[:]); read > 0 && err == nil; read, err = cr.Read(pkt[:]) {
+				if err != nil {
+					i.l.WithError(err).Error("reading packet")
+					http.Error(w, "Internal Error", http.StatusBadRequest)
+					return
+				}
+				// i.l.Debugf("got packet pid %d", packet.Pid(&pkt))
+				p, err := packet.Payload(&pkt)
+				if err != nil {
+					i.l.WithError(err).Errorf("reading packet %d payload", packet.Pid(&pkt))
+					http.Error(w, "Internal Error", http.StatusBadRequest)
+					return
+				}
+				if _, err := w.Write(p); err != nil {
+					i.l.WithError(err).Error("writing packet")
+					http.Error(w, "Internal Error", http.StatusBadRequest)
+					return
+				}
 			}
+
+			cd := time.Duration(c.Duration * float64(time.Second))
+
+			var sleepTime time.Duration
+
+			if servedTime > initialIcyServe {
+				// we've served our initial buffer, sleep for the chunk until it's time for the next one.
+				// deduct 1ms from the serve time to kinda account for the processing time above. this is
+				// pretty inaccurate, but good enough here
+				//
+				// processing time + how long the chunk will go for less 10 ms for "overhead"
+				sleepTime = time.Since(st) + cd - 10*time.Millisecond
+			} else {
+				sleepTime = 0
+			}
+
+			nextRun.Reset(sleepTime)
+
+			// increment sequence + serve time
+			s = c.Sequence + 1
+			servedTime = servedTime + cd
 		}
-
-		cd := time.Duration(c.Duration * float64(time.Second))
-
-		if servedTime > initialIcyServe {
-			// we've served our initial buffer, sleep for the chunk until it's time for the next one.
-			// deduct 1ms from the serve time to kinda account for the processing time above. this is
-			// pretty inaccurate, but good enough here
-			//
-			// TODO - use better time keeping here, like just track last served time and increment or w/e
-			time.Sleep(cd - 100*time.Millisecond)
-		}
-
-		// increment sequence + serve time
-		s = c.Sequence + 1
-		servedTime = servedTime + cd
 	}
 }
