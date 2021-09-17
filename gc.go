@@ -14,7 +14,7 @@ const (
 	// time since last update we delete a session
 	sessMaxAge = 12 * time.Hour
 	// age at which we purge a chunk
-	chunkMaxAge = 12 * time.Hour
+	chunkMaxAge = 24 * time.Hour
 
 	// max number of expired chunks we act on at once
 	expiredChunksMax = 1000
