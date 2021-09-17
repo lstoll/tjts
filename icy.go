@@ -83,6 +83,8 @@ func (i *icyServer) ServeIcecast(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "audio/aacp")
 	w.Header().Set("icy-name", stationName)
 
+	// note - from this point on http.Error is useless, we've already served headers and stuff
+
 	// track how much we've served to the user, so we can fast start the station
 	// with the first few chunks
 	var servedTime time.Duration
@@ -100,12 +102,10 @@ func (i *icyServer) ServeIcecast(w http.ResponseWriter, r *http.Request) {
 			rcs, err := i.indexer.Chunks(ctx, streamID, s, 1)
 			if err != nil {
 				l.WithError(err).Errorf("getting 1 chunk from %d", s)
-				http.Error(w, "Internal Error", http.StatusBadRequest)
 				return
 			}
 			if len(rcs) < 1 {
 				l.Warnf("got no chunks")
-				http.Error(w, "Internal Error", http.StatusBadRequest)
 				return
 			}
 			c := rcs[0]
@@ -115,7 +115,6 @@ func (i *icyServer) ServeIcecast(w http.ResponseWriter, r *http.Request) {
 			cr, err := i.mapper.ReaderFor(streamID, c.ChunkID)
 			if err != nil {
 				l.WithError(err).Error("getting chunk reader")
-				http.Error(w, "Internal Error", http.StatusBadRequest)
 				return
 			}
 
@@ -132,7 +131,6 @@ func (i *icyServer) ServeIcecast(w http.ResponseWriter, r *http.Request) {
 			pat, err := psi.ReadPAT(cr)
 			if err != nil {
 				l.WithError(err).Error("getting pat")
-				http.Error(w, "Internal Error", http.StatusBadRequest)
 				return
 			}
 			_ = pat
@@ -144,7 +142,6 @@ func (i *icyServer) ServeIcecast(w http.ResponseWriter, r *http.Request) {
 			for read, err := cr.Read(pkt[:]); read > 0 && err == nil; read, err = cr.Read(pkt[:]) {
 				if err != nil {
 					l.WithError(err).Error("reading packet")
-					http.Error(w, "Internal Error", http.StatusBadRequest)
 					return
 				}
 				if packet.Pid(&pkt) != audioPid {
@@ -163,18 +160,15 @@ func (i *icyServer) ServeIcecast(w http.ResponseWriter, r *http.Request) {
 					ph, err := packet.PESHeader(&pkt)
 					if err != nil {
 						l.WithError(err).Errorf("getting packet header")
-						http.Error(w, "Internal Error", http.StatusBadRequest)
 						return
 					}
 					pes, err := pes.NewPESHeader(ph)
 					if err != nil {
 						l.WithError(err).Errorf("creating pes header")
-						http.Error(w, "Internal Error", http.StatusBadRequest)
 						return
 					}
 					if _, err := w.Write(pes.Data()); err != nil {
 						l.WithError(err).Error("writing packet")
-						http.Error(w, "Internal Error", http.StatusBadRequest)
 						return
 					}
 				} else {
@@ -184,13 +178,11 @@ func (i *icyServer) ServeIcecast(w http.ResponseWriter, r *http.Request) {
 					pl, err := pkt.Payload()
 					if err != nil {
 						l.WithError(err).Error("getting packet payload")
-						http.Error(w, "Internal Error", http.StatusBadRequest)
 						return
 					}
 
 					if _, err := w.Write(pl); err != nil {
 						l.WithError(err).Error("writing packet")
-						http.Error(w, "Internal Error", http.StatusBadRequest)
 						return
 					}
 				}
