@@ -25,7 +25,7 @@ RUN adduser \
 
 RUN apt-get update && \
     apt-get upgrade -y && \
-    apt-get install -y sqlite3
+    apt-get install -y sqlite3 curl iputils-ping
 
 COPY --from=build /go/bin/tjts /usr/bin/tjts
 
