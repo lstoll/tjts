@@ -2,15 +2,6 @@
 
 FROM golang:1.17 AS build
 
-RUN adduser \
-    --disabled-password \
-    --gecos "" \
-    --home "/tmp" \
-    --shell "/sbin/nologin" \
-    --no-create-home \
-    --uid 1000 \
-    app
-
 RUN mkdir -p /src/tjts
 WORKDIR /src/tjts
 
@@ -21,11 +12,20 @@ COPY . .
 
 RUN --mount=type=cache,target=/root/.cache/go-build CGO_ENABLED=0 go install ./...
 
-FROM gcr.io/distroless/base
+FROM ubuntu:focal
 
-COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
-COPY --from=build /etc/passwd /etc/passwd
-COPY --from=build /etc/group /etc/group
+RUN adduser \
+    --disabled-password \
+    --gecos "" \
+    --home "/tmp" \
+    --shell "/sbin/nologin" \
+    --no-create-home \
+    --uid 1000 \
+    app
+
+RUN apt-get update && \
+    apt-get upgrade -y && \
+    apt-get install -y sqlite3
 
 COPY --from=build /go/bin/tjts /usr/bin/tjts
 
