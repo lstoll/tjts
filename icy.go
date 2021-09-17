@@ -45,9 +45,11 @@ func (i *icyServer) ServeIcecast(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var baseTZ string
+	var stationName string
 	for _, s := range i.streams {
 		if s.ID == streamID {
 			baseTZ = s.BaseTimezone
+			stationName = s.Name
 		}
 	}
 	if baseTZ == "" {
@@ -74,7 +76,7 @@ func (i *icyServer) ServeIcecast(w http.ResponseWriter, r *http.Request) {
 	// now we want to get a sequence, stream it's contents, and sleep.
 
 	w.Header().Set("Content-Type", "audio/aacp")
-	w.Header().Set("icy-name", "STATION")
+	w.Header().Set("icy-name", stationName)
 
 	// track how much we've served to the user, so we can fast start the station
 	// with the first few chunks
