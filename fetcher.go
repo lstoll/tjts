@@ -76,7 +76,7 @@ func (f *fetcher) Run() error {
 			}
 
 			// set the next fetch for when ~75% of this fetch is up. that should
-			// give us time to fetch/retry without being agressive.
+			// give us time to fetch/retry without being aggressive.
 			rsd := time.Duration(float64(td) * 0.75)
 			f.l.Debugf("Resetting ticker to interval %s", rsd)
 			f.ticker.Reset(rsd)
