@@ -3,6 +3,7 @@ module github.com/lstoll/tjts
 go 1.17
 
 require (
+	github.com/Comcast/gots v0.0.0-20210729193645-c0b8c9c849f7
 	github.com/etherlabsio/go-m3u8 v0.1.2
 	github.com/google/uuid v1.3.0
 	github.com/oklog/run v1.1.0

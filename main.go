@@ -63,6 +63,7 @@ func main() {
 	ss := newSessionStore(db)
 
 	pl := newPlaylist(l.WithField("component", "playlist"), cfg.Streams, rec, ds, ss)
+	is := newIcyServer(l.WithField("component", "icyServer"), cfg.Streams, rec, ds)
 
 	idx := newIndex(l.WithField("component", "index"), cfg.Streams)
 
@@ -71,8 +72,15 @@ func main() {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/m3u8", pl.ServePlaylist)
+	mux.HandleFunc("/icecast", is.ServeIcecast)
 	mux.Handle("/segment/", http.StripPrefix("/segment/", ds))
-	mux.Handle("/", idx)
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/" {
+			http.Error(w, "Not Found", http.StatusNotFound)
+			return
+		}
+		idx.ServeHTTP(w, r)
+	})
 
 	srv := &http.Server{
 		Addr:    *listen,
