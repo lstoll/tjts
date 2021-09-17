@@ -100,7 +100,7 @@ func main() {
 			l.WithError(err).Fatalf("creating fetcher store for %s", s.ID)
 		}
 
-		f, err := newFetcher(l.WithField("component", "fetcher"), fcs, s.URL)
+		f, err := newFetcher(l.WithField("component", "fetcher").WithField("stationid", s.ID), fcs, s.URL)
 		if err != nil {
 			l.WithError(err).Fatal("creating fetcher")
 		}

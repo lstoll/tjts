@@ -47,6 +47,8 @@ func newFetcher(l logrus.FieldLogger, cs *stationChunkStore, streamURL string) (
 }
 
 func (f *fetcher) Run() error {
+	f.l.Debug("Run started")
+
 	pl, err := f.getPlaylist()
 	if err != nil {
 		return fmt.Errorf("getting initial playlist: %v", err)
@@ -54,11 +56,15 @@ func (f *fetcher) Run() error {
 
 	// set the ticker to half the target duration. This should let us pick up
 	// segments timely, without polling things too much.
-	f.ticker = time.NewTicker(time.Duration(pl.Target) / 2 * time.Second)
+	ti := time.Duration(pl.Target) / 2 * time.Second
+	f.l.Debugf("Starting ticker for interval %s", ti)
+	f.ticker = time.NewTicker(ti)
 
 	for {
 		select {
 		case <-f.ticker.C:
+			f.l.Debug("tick")
+
 			// we don't hard error in here, assume we will retry/recover
 			pl, err := f.getPlaylist()
 			if err != nil {
