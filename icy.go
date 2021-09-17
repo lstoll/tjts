@@ -125,7 +125,7 @@ func (i *icyServer) ServeIcecast(w http.ResponseWriter, r *http.Request) {
 			// * https://tsduck.io/download/docs/mpegts-introduction.pdf
 
 			// TODO - this is 100% filled with hardcoded assumptions about the
-			// stream. We need to determing the right thing to demux by using
+			// stream. We need to determining the right thing to demux by using
 			// the stream map, and also do some checking on the PES header data
 			// to make sure we're extracting the right shit
 
