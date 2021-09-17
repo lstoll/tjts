@@ -39,7 +39,7 @@ type tmplStream struct {
 	Name string
 }
 
-func (i *index) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (i *index) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
 	data := map[string]interface{}{
 		"Streams": i.streams,
 	}

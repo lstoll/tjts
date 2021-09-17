@@ -14,10 +14,6 @@ func TestGC(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now()
 
-	const (
-		testStreamID = "sid"
-	)
-
 	db, err := newDB(t.TempDir() + "/db")
 	if err != nil {
 		t.Fatal(err)

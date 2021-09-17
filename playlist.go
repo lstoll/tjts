@@ -102,25 +102,12 @@ func (p *playlist) ServePlaylist(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		tz, err := time.LoadLocation(sess.Timezone)
+		offset, err := offsetForTimezone(baseTZ, sess.Timezone)
 		if err != nil {
-			p.l.WithError(err).Debugf("looking up user timezone %s", sess.Timezone)
-			http.Error(w, fmt.Sprintf("Couldn't find timezone %s", sess.Timezone), http.StatusBadRequest)
+			p.l.WithError(err).Debugf("finding offset")
+			http.Error(w, fmt.Sprintf("Error calculating offset: %s", err.Error()), http.StatusBadRequest)
 			return
 		}
-
-		t := time.Date(1981, 12, 6, 01, 00, 00, 00, tz)
-
-		btz, err := time.LoadLocation(baseTZ)
-		if err != nil {
-			p.l.WithError(err).Errorf("looking up base timezone %s", baseTZ)
-			http.Error(w, fmt.Sprintf("Couldn't find timezone %s", baseTZ), http.StatusBadRequest)
-			return
-		}
-
-		bt := time.Date(1981, 12, 6, 01, 00, 00, 00, btz)
-
-		offset := t.Sub(bt)
 
 		s, err := p.indexer.SequenceFor(ctx, sess.StreamID, now.Add(-offset))
 		if err != nil {
@@ -205,4 +192,22 @@ func maxDuration(sg []recordedChunk) int {
 		}
 	}
 	return int(max)
+}
+
+func offsetForTimezone(baseTZ, userTZ string) (time.Duration, error) {
+	tz, err := time.LoadLocation(userTZ)
+	if err != nil {
+		return 0, fmt.Errorf("finding user timezone %s: %v", userTZ, err)
+	}
+
+	t := time.Date(1981, 12, 6, 01, 00, 00, 00, tz)
+
+	btz, err := time.LoadLocation(baseTZ)
+	if err != nil {
+		return 0, fmt.Errorf("finding base timezone %s: %v", baseTZ, err)
+	}
+
+	bt := time.Date(1981, 12, 6, 01, 00, 00, 00, btz)
+
+	return t.Sub(bt), nil
 }

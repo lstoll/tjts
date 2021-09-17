@@ -43,7 +43,16 @@ func (d *diskChunkStore) URLFor(streamID, chunkID string) string {
 	return d.urlPrefix + "/" + streamID + "/" + chunkID
 }
 
-func (d *diskChunkStore) DeleteChunk(ctx context.Context, streamID, chunkID string) error {
+func (d *diskChunkStore) ReaderFor(streamID, chunkID string) (io.ReadCloser, error) {
+	cfn := filepath.Join(d.basePath, streamID, chunkID)
+	f, err := os.Open(cfn)
+	if err != nil {
+		return nil, fmt.Errorf("opening %s: %v", cfn, err)
+	}
+	return f, nil
+}
+
+func (d *diskChunkStore) DeleteChunk(_ context.Context, streamID, chunkID string) error {
 	cfn := filepath.Join(d.basePath, streamID, chunkID)
 	if err := os.Remove(cfn); err != nil {
 		if os.IsNotExist(err) {
