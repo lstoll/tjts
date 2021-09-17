@@ -24,9 +24,10 @@ func newIndex(l logrus.FieldLogger, streams []configStream) *index {
 	var ts []tmplStream
 	for _, s := range streams {
 		ts = append(ts, tmplStream{
-			JSID: template.JS(s.ID),
-			URL:  template.JSStr("/m3u8?stream=" + s.ID),
-			Name: s.Name,
+			JSID:   template.JS(s.ID),
+			HLSURL: template.JSStr("/m3u8?stream=" + s.ID),
+			ICYURL: template.JSStr("/icecast?stream=" + s.ID),
+			Name:   s.Name,
 		})
 	}
 
@@ -34,9 +35,10 @@ func newIndex(l logrus.FieldLogger, streams []configStream) *index {
 }
 
 type tmplStream struct {
-	JSID template.JS
-	URL  template.JSStr
-	Name string
+	JSID   template.JS
+	HLSURL template.JSStr
+	ICYURL template.JSStr
+	Name   string
 }
 
 func (i *index) ServeHTTP(w http.ResponseWriter, _ *http.Request) {

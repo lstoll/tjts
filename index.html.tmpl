@@ -2,22 +2,30 @@
 <html>
   <head>
     <title>Radio in your TZ</title>
-    <!-- TODO https://github.com/video-dev/hls.js/ ? -->
-    <p>(safari only)</p>
     <script type="text/javascript">
-      var locTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-      var tstreamURL = window.location.href + "triplej?tz=" + encodeURIComponent(locTz);
-      var dstreamURL = window.location.href + "doublej?tz=" + encodeURIComponent(locTz);
       window.onload = function() {
-          var tzspan = document.getElementById("detectedtz");
-          tzspan.innerHTML = locTz
+          var locTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+          document.getElementById("detectedtz").innerHTML = locTz
+
+          var audElem = document.createElement('audio');
+          var supportsHLS = audElem.canPlayType('application/x-mpegURL');
+
 
 {{ range $index, $element := .Streams }}
-          var {{ .JSID }}baseURL = window.location.origin + {{ .URL }}
-          var {{ .JSID }}streamURL = {{ .JSID }}baseURL + "&tz=" + encodeURIComponent(locTz)
-          document.getElementById("{{ .JSID }}url").innerHTML = {{ .JSID }}streamURL;
-          document.getElementById("{{ .JSID }}player").src = {{ .JSID }}streamURL;
+          var {{ .JSID }}hlsbaseURL = window.location.origin + {{ .HLSURL }}
+          var {{ .JSID }}icybaseURL = window.location.origin + {{ .ICYURL }}
+          var {{ .JSID }}hlsstreamURL = {{ .JSID }}hlsbaseURL + "&tz=" + encodeURIComponent(locTz)
+          var {{ .JSID }}icystreamURL = {{ .JSID }}icybaseURL + "&tz=" + encodeURIComponent(locTz)
+          document.getElementById("{{ .JSID }}hlsurl").innerHTML = {{ .JSID }}hlsstreamURL;
+          document.getElementById("{{ .JSID }}icyurl").innerHTML = {{ .JSID }}icystreamURL;
+          if (supportsHLS) {
+            document.getElementById("{{ .JSID }}player").type = "application/x-mpegURL";
+            document.getElementById("{{ .JSID }}player").src = {{ .JSID }}hlsstreamURL;
+          } else {
+            document.getElementById("{{ .JSID }}player").src = {{ .JSID }}icystreamURL;
+          }
 {{ end }}
+
       }
     </script>
   </head>
@@ -25,8 +33,9 @@
     <h1>Timezone: <span id="detectedtz"></span></h1>
 {{ range $index, $element := .Streams }}
     <h2>{{ .Name }} offset to your TZ</h2>
-    <p>Stream URL for detected TZ: <span id="{{ .JSID }}url"></span></p>
-    <audio id="{{ .JSID }}player" type="application/x-mpegURL" controls></audio>
+    <p>HLS URL for detected TZ: <span id="{{ .JSID }}hlsurl"></span></p>
+    <p>Icecast URL for detected TZ: <span id="{{ .JSID }}icyurl"></span></p>
+    <audio id="{{ .JSID }}player" controls></audio>
 {{ end }}
   </body>
 </html>
