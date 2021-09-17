@@ -200,7 +200,7 @@ func (i *icyServer) ServeIcecast(w http.ResponseWriter, r *http.Request) {
 
 			var sleepTime time.Duration
 
-			if servedTime > initialIcyServe {
+			if servedTime >= initialIcyServe {
 				// we've served our initial buffer, sleep for the chunk until it's time for the next one.
 				// deduct 1ms from the serve time to kinda account for the processing time above. this is
 				// pretty inaccurate, but good enough here
