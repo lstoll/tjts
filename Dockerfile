@@ -10,7 +10,7 @@ RUN go mod download
 
 COPY . .
 
-RUN --mount=type=cache,target=/root/.cache/go-build CGO_ENABLED=0 go install ./...
+RUN --mount=type=cache,target=/root/.cache/go-build go install ./...
 
 FROM ubuntu:focal
 
