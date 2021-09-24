@@ -38,7 +38,7 @@ var migrations = []migration{
 
 func newDB(path string) (*sql.DB, error) {
 	// remember, memory errors here just mean like bad dsn?
-	db, err := sql.Open("sqlite", path)
+	db, err := sql.Open("sqlite3", path)
 	if err != nil {
 		return nil, fmt.Errorf("opening DB at %s: %v", path, err)
 	}

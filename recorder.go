@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	_ "modernc.org/sqlite"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 // recorder maintains state metadata. It uses a sqlite DB - this is overkill for
