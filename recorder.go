@@ -39,8 +39,9 @@ func (r *recorder) RecordChunk(ctx context.Context, streamID, chunkID string, du
 }
 
 type recordedChunk struct {
-	Sequence  int
-	ChunkID   string
+	Sequence int
+	ChunkID  string
+	// Duration of the chunk, in seconds
 	Duration  float64
 	FetchedAt time.Time
 }

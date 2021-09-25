@@ -11,7 +11,10 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-const initialIcyServe = 30 * time.Second
+// streamBuffer amount of content we serve ahead to the consumer, to give them a
+// bit of a buffer for network issues or w/e. this is the minumum we always want
+// the user to be ahead
+const streamBuffer = 30 * time.Second
 
 // icyServer serves a given station over icecast
 type icyServer struct {
@@ -86,9 +89,10 @@ func (i *icyServer) ServeIcecast(w http.ResponseWriter, r *http.Request) {
 
 	// note - from this point on http.Error is useless, we've already served headers and stuff
 
-	// track how much we've served to the user, so we can fast start the station
-	// with the first few chunks
-	var servedTime time.Duration
+	// track when we start the streaming, and how much time we've streamed to
+	// the user
+	streamStart := time.Now()
+	servedTime := time.Duration(0)
 
 	nextRun := time.NewTimer(0)
 
@@ -98,8 +102,6 @@ func (i *icyServer) ServeIcecast(w http.ResponseWriter, r *http.Request) {
 			l.Debug("context done")
 			return
 		case <-nextRun.C:
-			st := time.Now()
-
 			rcs, err := i.indexer.Chunks(ctx, streamID, s, 1)
 			if err != nil {
 				serveEndpointErrorCount.WithLabelValues("icy", streamID).Inc()
@@ -120,8 +122,6 @@ func (i *icyServer) ServeIcecast(w http.ResponseWriter, r *http.Request) {
 				l.WithError(err).Error("getting chunk reader")
 				return
 			}
-
-			l.Debugf("s: %d gotSeq %d servedTime %s", s, c.Sequence, servedTime.String())
 
 			// refs:
 			// * https://tsduck.io/download/docs/mpegts-introduction.pdf
@@ -182,7 +182,6 @@ func (i *icyServer) ServeIcecast(w http.ResponseWriter, r *http.Request) {
 				} else {
 					// otherwise assume a continuation from the last pes header,
 					// so just stream it
-
 					pl, err := pkt.Payload()
 					if err != nil {
 						serveEndpointErrorCount.WithLabelValues("icy", streamID).Inc()
@@ -198,26 +197,44 @@ func (i *icyServer) ServeIcecast(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 
+			// We want to make sure the user has been served enough data for the
+			// time elapsed since the start of the stream, plus streamBuffer.
+
+			// increment the served time with the chunk we just sent, and
+			// increment the sequence to represent a chunk seved.
+			//
+			// TODO - might want to consider calculating the actual data found
+			// in the parsed ts segment, rather than relying on what we pulled
+			// from the playlist. This would be more accurate.
 			cd := time.Duration(c.Duration * float64(time.Second))
-
-			// increment sequence + serve time
-			s = c.Sequence + 1
 			servedTime = servedTime + cd
+			s = c.Sequence + 1
 
-			var sleepTime time.Duration
+			l.Debugf("s: %d gotSeq %d streamStart %s servedTime %s calcSleep %s", s, c.Sequence, streamStart.String(), servedTime.String(), calculateIcySleep(streamStart, servedTime).String())
 
-			if servedTime >= initialIcyServe {
-				// we've served our initial buffer, sleep for the chunk until it's time for the next one.
-				// deduct 1ms from the serve time to kinda account for the processing time above. this is
-				// pretty inaccurate, but good enough here
-				//
-				// processing time + how long the chunk will go for less 10 ms for "overhead"
-				sleepTime = time.Since(st) + cd - 10*time.Millisecond
-			} else {
-				sleepTime = 0
-			}
-
-			nextRun.Reset(sleepTime)
+			// set the timer to the calculated sleep interval
+			nextRun.Reset(calculateIcySleep(streamStart, servedTime))
 		}
 	}
+}
+
+var nowFn = time.Now
+
+// calculateIcySleep takes the time a stream started and how much has been
+// served, and works out what the next timer should be
+func calculateIcySleep(streamStart time.Time, servedTime time.Duration) time.Duration {
+	// time.Since is basically now.Sub
+
+	// calculate how much time we should have served to the user. This will
+	// be the time elapsed since the stream started, plus the buffer
+	expectedServed := nowFn().Sub(streamStart) + streamBuffer
+
+	// the difference between how much we have served, vs. how much we should serve
+	servedDelta := servedTime - expectedServed
+
+	if servedDelta < 0 {
+		// can't negative sleep
+		return 0
+	}
+	return servedDelta
 }
