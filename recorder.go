@@ -88,6 +88,9 @@ func (r *recorder) Chunks(ctx context.Context, streamID string, startSequence in
 
 		ret = append(ret, r)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("in result iteration: %v", err)
+	}
 
 	return ret, nil
 }

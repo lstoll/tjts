@@ -132,9 +132,8 @@ func (g *garbageCollector) expiredChunks(ctx context.Context) ([]delRow, error) 
 
 		delrows = append(delrows, dr)
 	}
-
-	if err := rows.Close(); err != nil {
-		return nil, fmt.Errorf("closing rows: %v", err)
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("in result iteration: %v", err)
 	}
 
 	g.l.Debugf("found %d expired chunks (max %d)", len(delrows), expiredChunksMax)

@@ -151,6 +151,9 @@ func TestChunkRecording(t *testing.T) {
 			}
 			sids = append(sids, i)
 		}
+		if err := rows.Err(); err != nil {
+			t.Fatalf("in result iteration: %v", err)
+		}
 
 		want := []int{1, 2, 3, 4, 5}
 		if !reflect.DeepEqual(want, sids) {
