@@ -66,6 +66,7 @@ func (p *playlist) ServePlaylist(w http.ResponseWriter, r *http.Request) {
 
 	sess, err := p.sess.Get(ctx, sid)
 	if err != nil {
+		serveEndpointErrorCount.WithLabelValues("hls", sid).Inc()
 		p.l.WithError(err).Errorf("getting session %s", sid)
 		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
@@ -111,8 +112,9 @@ func (p *playlist) ServePlaylist(w http.ResponseWriter, r *http.Request) {
 
 		s, err := p.indexer.SequenceFor(ctx, sess.StreamID, now.Add(-offset))
 		if err != nil {
+			serveEndpointErrorCount.WithLabelValues("hls", sid).Inc()
 			p.l.WithError(err).Errorf("getting sequence for %s", sess.StreamID)
-			http.Error(w, "Internal Error", http.StatusBadRequest)
+			http.Error(w, "Internal Error", http.StatusInternalServerError)
 			return
 		}
 		sess.LatestSequence = s
@@ -122,12 +124,14 @@ func (p *playlist) ServePlaylist(w http.ResponseWriter, r *http.Request) {
 	// grab some chunks from our latest sequence. Get extra, in case we have to shift forward
 	rcs, err := p.indexer.Chunks(ctx, sess.StreamID, sess.LatestSequence, serveChunks*2)
 	if err != nil {
+		serveEndpointErrorCount.WithLabelValues("hls", sid).Inc()
 		p.l.WithError(err).Error("getting chunks")
 		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
 
 	if len(rcs) < serveChunks+1 {
+		serveEndpointErrorCount.WithLabelValues("hls", sid).Inc()
 		p.l.Errorf("insufficient chunks for %s", sess.StreamID)
 		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return

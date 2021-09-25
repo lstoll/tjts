@@ -73,8 +73,9 @@ func (i *icyServer) ServeIcecast(w http.ResponseWriter, r *http.Request) {
 
 	s, err := i.indexer.SequenceFor(ctx, streamID, now.Add(-offset))
 	if err != nil {
+		serveEndpointErrorCount.WithLabelValues("icy", streamID).Inc()
 		l.WithError(err).Errorf("getting sequence for %s", streamID)
-		http.Error(w, "Internal Error", http.StatusBadRequest)
+		http.Error(w, "Internal Error", http.StatusInternalServerError)
 		return
 	}
 
@@ -101,6 +102,7 @@ func (i *icyServer) ServeIcecast(w http.ResponseWriter, r *http.Request) {
 
 			rcs, err := i.indexer.Chunks(ctx, streamID, s, 1)
 			if err != nil {
+				serveEndpointErrorCount.WithLabelValues("icy", streamID).Inc()
 				l.WithError(err).Errorf("getting 1 chunk from %d", s)
 				return
 			}
@@ -114,6 +116,7 @@ func (i *icyServer) ServeIcecast(w http.ResponseWriter, r *http.Request) {
 
 			cr, err := i.mapper.ReaderFor(streamID, c.ChunkID)
 			if err != nil {
+				serveEndpointErrorCount.WithLabelValues("icy", streamID).Inc()
 				l.WithError(err).Error("getting chunk reader")
 				return
 			}
@@ -130,6 +133,7 @@ func (i *icyServer) ServeIcecast(w http.ResponseWriter, r *http.Request) {
 
 			pat, err := psi.ReadPAT(cr)
 			if err != nil {
+				serveEndpointErrorCount.WithLabelValues("icy", streamID).Inc()
 				l.WithError(err).Error("getting pat")
 				return
 			}
@@ -141,6 +145,7 @@ func (i *icyServer) ServeIcecast(w http.ResponseWriter, r *http.Request) {
 			var pkt packet.Packet
 			for read, err := cr.Read(pkt[:]); read > 0 && err == nil; read, err = cr.Read(pkt[:]) {
 				if err != nil {
+					serveEndpointErrorCount.WithLabelValues("icy", streamID).Inc()
 					l.WithError(err).Error("reading packet")
 					return
 				}
@@ -159,15 +164,18 @@ func (i *icyServer) ServeIcecast(w http.ResponseWriter, r *http.Request) {
 					// assume a PES header, extract it and return the data
 					ph, err := packet.PESHeader(&pkt)
 					if err != nil {
+						serveEndpointErrorCount.WithLabelValues("icy", streamID).Inc()
 						l.WithError(err).Errorf("getting packet header")
 						return
 					}
 					pes, err := pes.NewPESHeader(ph)
 					if err != nil {
+						serveEndpointErrorCount.WithLabelValues("icy", streamID).Inc()
 						l.WithError(err).Errorf("creating pes header")
 						return
 					}
 					if _, err := w.Write(pes.Data()); err != nil {
+						serveEndpointErrorCount.WithLabelValues("icy", streamID).Inc()
 						l.WithError(err).Error("writing packet")
 						return
 					}
@@ -177,11 +185,13 @@ func (i *icyServer) ServeIcecast(w http.ResponseWriter, r *http.Request) {
 
 					pl, err := pkt.Payload()
 					if err != nil {
+						serveEndpointErrorCount.WithLabelValues("icy", streamID).Inc()
 						l.WithError(err).Error("getting packet payload")
 						return
 					}
 
 					if _, err := w.Write(pl); err != nil {
+						serveEndpointErrorCount.WithLabelValues("icy", streamID).Inc()
 						l.WithError(err).Error("writing packet")
 						return
 					}

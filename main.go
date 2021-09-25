@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -12,6 +14,8 @@ import (
 	_ "time/tzdata"
 
 	"github.com/oklog/run"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/sirupsen/logrus"
 )
 
@@ -21,9 +25,10 @@ func main() {
 	l := logrus.New()
 
 	var (
-		listen     = flag.String("listen", "localhost:8080", "Address to listen on")
-		configPath = flag.String("config", "", "path to config file")
-		debug      = flag.Bool("debug", false, "enable debug logging")
+		listen        = flag.String("listen", "localhost:8080", "Address to listen on")
+		metricsListen = flag.String("metrics-listen", "localhost:8090", "Address to serve metrics on (prom at /metrics), if set")
+		configPath    = flag.String("config", "", "path to config file")
+		debug         = flag.Bool("debug", false, "enable debug logging")
 	)
 	flag.Parse()
 
@@ -106,6 +111,39 @@ func main() {
 		}
 
 		g.Add(f.Run, f.Interrupt)
+	}
+
+	if *metricsListen != "" {
+		ph := promhttp.InstrumentMetricHandler(
+			prometheus.DefaultRegisterer, promhttp.HandlerFor(prometheus.DefaultGatherer, promhttp.HandlerOpts{
+				ErrorLog: l,
+			}),
+		)
+
+		pm := http.NewServeMux()
+		pm.Handle("/metrics", ph)
+
+		metricsSrv := &http.Server{
+			Addr:    *metricsListen,
+			Handler: pm,
+		}
+
+		prometheus.MustRegister(newMetricsCollector(db))
+
+		g.Add(func() error {
+			l.Printf("Listing for metrics on %s", *metricsListen)
+			if err := metricsSrv.ListenAndServe(); err != nil {
+				return fmt.Errorf("serving metrics: %v", err)
+			}
+			return nil
+		}, func(error) {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := metricsSrv.Shutdown(ctx); err != nil {
+				log.Printf("shutting down metrics server: %v", err)
+			}
+			log.Print("returning metrics shutdown")
+		})
 	}
 
 	g.Add(func() error {
