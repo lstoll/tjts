@@ -40,7 +40,6 @@ func TestLastChunkTime(t *testing.T) {
 	}
 
 	mc := newMetricsCollector(db)
-	mc.now = func() time.Time { return now.Add(1 * time.Hour) }
 
 	lcts, err := mc.lastChunkTimes(ctx)
 	if err != nil {
@@ -51,9 +50,9 @@ func TestLastChunkTime(t *testing.T) {
 		log.Printf("want 2 times, got: %d", len(lcts))
 	}
 
-	if !reflect.DeepEqual(lcts, map[string]time.Duration{
-		"stream-1": mc.now().Sub(now.Add(-2 * time.Hour).Add(20 * 10 * time.Second)),
-		"stream-2": mc.now().Sub(now.Add(-1 * time.Hour).Add(20 * 10 * time.Second)),
+	if !reflect.DeepEqual(lcts, map[string]time.Time{
+		"stream-1": now.Add(-2 * time.Hour).Add(20 * 10 * time.Second),
+		"stream-2": now.Add(-1 * time.Hour).Add(20 * 10 * time.Second),
 	}) {
 		t.Errorf("unexpected data: %#v", lcts)
 	}

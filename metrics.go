@@ -23,18 +23,15 @@ type metricsCollector struct {
 	db *sql.DB
 
 	latestChunkFetchAgo *prometheus.Desc
-
-	now func() time.Time
 }
 
 func newMetricsCollector(db *sql.DB) *metricsCollector {
 	return &metricsCollector{
-		db:  db,
-		now: time.Now,
+		db: db,
 
 		latestChunkFetchAgo: prometheus.NewDesc(
-			"tjts_latest_chunk_fetch_ago_s",
-			"Seconds since last chunk was fetched",
+			"tjts_last_chunk_fetched_at",
+			"Time when last chunk was fetched, by stream",
 			[]string{"streamid"}, nil),
 	}
 }
@@ -52,21 +49,21 @@ func (m *metricsCollector) Collect(ch chan<- prometheus.Metric) {
 	lcts, err := m.lastChunkTimes(ctx)
 	if err == nil {
 		for k, v := range lcts {
-			ch <- prometheus.MustNewConstMetric(m.latestChunkFetchAgo, prometheus.GaugeValue, float64(v.Seconds()), k)
+			ch <- prometheus.MustNewConstMetric(m.latestChunkFetchAgo, prometheus.GaugeValue, float64(v.Unix()), k)
 		}
 	} else {
 		ch <- prometheus.NewInvalidMetric(m.latestChunkFetchAgo, fmt.Errorf("get latest device location timestamp: %v", err))
 	}
 }
 
-func (m *metricsCollector) lastChunkTimes(ctx context.Context) (map[string]time.Duration, error) {
+func (m *metricsCollector) lastChunkTimes(ctx context.Context) (map[string]time.Time, error) {
 	// TODO - kinda sucks to have to convert to using time to get out of this
 	// query?
 	r, err := m.db.QueryContext(ctx, `select stream_id, strftime("%s", max(fetched_at)) from chunks group by stream_id`)
 	if err != nil {
 		return nil, fmt.Errorf("querying last chunk times: %v", err)
 	}
-	ret := map[string]time.Duration{}
+	ret := map[string]time.Time{}
 	for r.Next() {
 		var (
 			sid string
@@ -75,7 +72,7 @@ func (m *metricsCollector) lastChunkTimes(ctx context.Context) (map[string]time.
 		if err := r.Scan(&sid, &fai); err != nil {
 			return nil, fmt.Errorf("scanning row: %v", err)
 		}
-		ret[sid] = m.now().Sub(time.Unix(fai, 0))
+		ret[sid] = time.Unix(fai, 0)
 	}
 	return ret, nil
 }
