@@ -19,6 +19,10 @@ var (
 		Name: "tjts_now_playing_fetch_errors",
 		Help: "Count of errors while fetching the now playing metadata",
 	}, []string{"streamid"})
+	fetchErrorCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "tjts_stream_fetch_errors",
+		Help: "Count of errors while fetching stream playlist or chunks",
+	}, []string{"streamid"})
 )
 
 var _ prometheus.Collector = (*metricsCollector)(nil)

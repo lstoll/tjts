@@ -21,13 +21,14 @@ type fetcher struct {
 	hc *http.Client
 	cs *stationChunkStore
 
-	url *url.URL
+	url      *url.URL
+	streamID string
 
 	stopC  chan struct{}
 	ticker *time.Ticker
 }
 
-func newFetcher(l logrus.FieldLogger, cs *stationChunkStore, streamURL string) (*fetcher, error) {
+func newFetcher(l logrus.FieldLogger, cs *stationChunkStore, streamID, streamURL string) (*fetcher, error) {
 	hc := &http.Client{
 		Timeout: time.Second * 5,
 	}
@@ -38,11 +39,12 @@ func newFetcher(l logrus.FieldLogger, cs *stationChunkStore, streamURL string) (
 	}
 
 	return &fetcher{
-		l:     l,
-		hc:    hc,
-		url:   u,
-		cs:    cs,
-		stopC: make(chan struct{}),
+		l:        l,
+		hc:       hc,
+		url:      u,
+		streamID: streamID,
+		cs:       cs,
+		stopC:    make(chan struct{}),
 	}, nil
 }
 
@@ -61,6 +63,7 @@ func (f *fetcher) Run() error {
 			// we don't hard error in here, assume we will retry/recover
 			pl, err := f.getPlaylist()
 			if err != nil {
+				fetchErrorCount.WithLabelValues(f.streamID).Inc()
 				f.l.WithError(err).Warn("getting playlist")
 				continue
 			}
@@ -69,6 +72,7 @@ func (f *fetcher) Run() error {
 
 			for _, s := range pl.Segments() {
 				if err := f.downloadSegment(s); err != nil {
+					fetchErrorCount.WithLabelValues(f.streamID).Inc()
 					f.l.WithError(err).Warn("downloading segment")
 					continue
 				}

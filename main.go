@@ -104,7 +104,7 @@ func main() {
 			l.WithError(err).Fatalf("creating fetcher store for %s", s.ID)
 		}
 
-		f, err := newFetcher(l.WithField("component", "fetcher").WithField("stationid", s.ID), fcs, s.URL)
+		f, err := newFetcher(l.WithField("component", "fetcher").WithField("stationid", s.ID), fcs, s.ID, s.URL)
 		if err != nil {
 			l.WithError(err).Fatal("creating fetcher")
 		}
@@ -112,7 +112,7 @@ func main() {
 		g.Add(f.Run, f.Interrupt)
 
 		if s.NowPlayingURL != "" {
-			npf, err := newNowPlayingFetcher(l.WithField("component", "nowplaying"), db, s.ID, s.NowPlayingURL)
+			npf, err := newNowPlayingFetcher(l.WithField("component", "nowplaying").WithField("stationid", s.ID), db, s.ID, s.NowPlayingURL)
 			if err != nil {
 				l.WithError(err).Fatal("creating now playing fetcher")
 			}
