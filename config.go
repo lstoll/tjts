@@ -22,6 +22,9 @@ type configStream struct {
 	URL string `yaml:"url"`
 	// BaseTimezone is the timezone the stream is originally in
 	BaseTimezone string `yaml:"baseTimezone"`
+	// NowPlayingURL serves the ABC formatted now playing metadata. If set, we
+	// will fetch and track this
+	NowPlayingURL string `yaml:"nowPlayingURL"`
 }
 
 // configFile maps our on-disk config to something usable.

@@ -99,7 +99,6 @@ func main() {
 	g.Add(gc.Run, gc.Interrupt)
 
 	for _, s := range cfg.Streams {
-
 		fcs, err := ds.FetcherStore(s.ID)
 		if err != nil {
 			l.WithError(err).Fatalf("creating fetcher store for %s", s.ID)
@@ -111,6 +110,14 @@ func main() {
 		}
 
 		g.Add(f.Run, f.Interrupt)
+
+		if s.NowPlayingURL != "" {
+			npf, err := newNowPlayingFetcher(l.WithField("component", "nowplaying"), db, s.ID, s.NowPlayingURL)
+			if err != nil {
+				l.WithError(err).Fatal("creating now playing fetcher")
+			}
+			g.Add(npf.Run, npf.Interrupt)
+		}
 	}
 
 	if *metricsListen != "" {

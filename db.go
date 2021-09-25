@@ -34,6 +34,17 @@ var migrations = []migration{
 			);
 		`,
 	},
+	{
+		Idx: 202109251245,
+		SQL: `
+			create table now_playing_raw (
+				id integer not null primary key autoincrement,
+				stream_id text not null,
+				data blob not null, -- JSON from the endpoint
+				fetched_at datetime not null
+			);
+		`,
+	},
 }
 
 func newDB(path string) (*sql.DB, error) {
