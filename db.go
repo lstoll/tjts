@@ -43,6 +43,12 @@ func newDB(path string) (*sql.DB, error) {
 		return nil, fmt.Errorf("opening DB at %s: %v", path, err)
 	}
 
+	// sleep for up to 30s if the DB is locked, rather than immediately failing.
+	_, err = db.ExecContext(context.TODO(), "PRAGMA busy_timeout = 30000;")
+	if err != nil {
+		return nil, err
+	}
+
 	if err := integrityCheck(context.TODO(), db); err != nil {
 		return nil, fmt.Errorf("integrity check of %s failed: %v", path, err)
 	}
