@@ -12,7 +12,7 @@ import (
 )
 
 // streamBuffer amount of content we serve ahead to the consumer, to give them a
-// bit of a buffer for network issues or w/e. this is the minumum we always want
+// bit of a buffer for network issues or w/e. this is the minimum we always want
 // the user to be ahead
 const streamBuffer = 30 * time.Second
 
