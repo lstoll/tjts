@@ -20,13 +20,13 @@ func TestCalcSleep(t *testing.T) {
 			Name:       "Behind by 30 seconds",
 			StartTime:  now.Add(-1 * time.Minute),
 			ServedTime: 30 * time.Second,
-			WantSleep:  0,
+			WantSleep:  1 * time.Nanosecond,
 		},
 		{
 			Name:       "On time",
 			StartTime:  now.Add(-1 * time.Minute),
 			ServedTime: 1*time.Minute + 30*time.Second,
-			WantSleep:  0,
+			WantSleep:  1 * time.Nanosecond,
 		},
 		{
 			Name:       "40 seconds ahead",
@@ -44,7 +44,7 @@ func TestCalcSleep(t *testing.T) {
 			Name:       "Behind by 1 minute",
 			StartTime:  now.Add(-1 * time.Hour),
 			ServedTime: 1*time.Hour - 1*time.Minute - 30*time.Second,
-			WantSleep:  0,
+			WantSleep:  1 * time.Nanosecond,
 		},
 	} {
 		t.Run(tc.Name, func(t *testing.T) {
