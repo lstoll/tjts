@@ -232,9 +232,9 @@ func calculateIcySleep(streamStart time.Time, servedTime time.Duration) time.Dur
 	// the difference between how much we have served, vs. how much we should serve
 	servedDelta := servedTime - expectedServed
 
-	if servedDelta < 0 {
-		// can't negative sleep
-		return 0
+	if servedDelta <= 0 {
+		// closest thing to immediate
+		return 1 * time.Nanosecond
 	}
 	return servedDelta
 }
