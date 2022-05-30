@@ -1,6 +1,6 @@
 module github.com/lstoll/tjts
 
-go 1.17
+go 1.18
 
 require (
 	github.com/Comcast/gots v0.0.0-20210729193645-c0b8c9c849f7

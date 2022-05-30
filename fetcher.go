@@ -82,7 +82,7 @@ func (f *fetcher) Run() error {
 			// set the next fetch for when ~75% of this fetch is up. that should
 			// give us time to fetch/retry without being aggressive.
 			rsd := time.Duration(float64(td) * 0.75)
-			if rsd == 0 {
+			if rsd < 1 {
 				// we probably downloaded no chunks. Cannot reset a ticker to 0
 				// and probably want to wait before retrying anyway, so reset to
 				// like 5s.
