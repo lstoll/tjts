@@ -13,17 +13,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v2
 
-      - name: Test
-        run: |
-          go test ./...
-
       - name: Docker meta
         id: meta
         uses: docker/metadata-action@v4
         with:
           # list of Docker images to use as base name for tags
           images: |
-            ghcr.io/lstoll/webauthn-oidc-idp
+            ghcr.io/lstoll/tjts
           # generate Docker tags based on the following events/attributes
           tags: |
             type=ref,event=branch
