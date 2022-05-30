@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.3
 
-FROM golang:1.18-rc AS build
+FROM golang:1.18 AS build
 
 RUN mkdir -p /src/tjts
 WORKDIR /src/tjts
