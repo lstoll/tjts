@@ -74,9 +74,6 @@ func TestChunks(t *testing.T) {
 		}
 	}
 
-	// move now forward until the "end" of the recorded chunks
-	now = now.Add(20 * 10 * time.Second)
-
 	cs, err := r.Chunks(ctx, testStreamID, 10, 3)
 	if err != nil {
 		t.Fatal(err)
