@@ -11,11 +11,7 @@ func TestResolveSegmentURL(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	f := &fetcher{
-		url: u,
-	}
-
-	res, err := f.resolveSegmentURL("https://absolute/url.aac")
+	res, err := resolveSegmentURL(u, "https://absolute/url.aac")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -24,7 +20,7 @@ func TestResolveSegmentURL(t *testing.T) {
 		t.Errorf("should resolve to https://absolute/url.aac , got: %s", res.String())
 	}
 
-	res, err = f.resolveSegmentURL("file.aac")
+	res, err = resolveSegmentURL(u, "file.aac")
 	if err != nil {
 		t.Fatal(err)
 	}
