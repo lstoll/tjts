@@ -130,7 +130,7 @@ func (i *icyServer) ServeIcecast(w http.ResponseWriter, r *http.Request) {
 			 * structure in to not-big-if-else
 			 */
 			if filepath.Ext(c.ChunkID) == ".aac" {
-				// this is a raw aac blob. send it and exit early
+				// this is a raw aac blob, just send it
 				if _, err := io.Copy(w, cr); err != nil {
 					serveEndpointErrorCount.WithLabelValues("icy", streamID).Inc()
 					l.WithError(err).Error("writing aac chunk to consumer")

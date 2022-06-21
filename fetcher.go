@@ -129,6 +129,7 @@ func (f *fetcher) getPlaylist(u *url.URL) (*m3u8.Playlist, *url.URL, error) {
 		if best == nil {
 			return nil, nil, errors.New("can't find anything in the master playlist")
 		}
+		f.l.Debugf("%s is a master playlist, using entry with bandwidth %d", u.String(), best.Bandwidth)
 		// recurse to get the actual items we want
 		u, err := resolveSegmentURL(r.Request.URL, best.URI)
 		if err != nil {
