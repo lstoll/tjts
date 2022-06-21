@@ -129,7 +129,9 @@ func (i *icyServer) ServeIcecast(w http.ResponseWriter, r *http.Request) {
 			 * clean this up a bit to be better about content type management, and
 			 * structure in to not-big-if-else
 			 */
+			var rawAAC bool
 			if filepath.Ext(c.ChunkID) == ".aac" {
+				rawAAC = true
 				// this is a raw aac blob, just send it
 				if _, err := io.Copy(w, cr); err != nil {
 					serveEndpointErrorCount.WithLabelValues("icy", streamID).Inc()
@@ -227,7 +229,7 @@ func (i *icyServer) ServeIcecast(w http.ResponseWriter, r *http.Request) {
 			servedTime = servedTime + cd
 			s = c.Sequence + 1
 
-			l.Debugf("s: %d gotSeq %d streamStart %s servedTime %s calcSleep %s", s, c.Sequence, streamStart.String(), servedTime.String(), calculateIcySleep(streamStart, servedTime).String())
+			l.Debugf("s: %d rawAAC: %t gotSeq %d streamStart %s servedTime %s calcSleep %s", s, rawAAC, c.Sequence, streamStart.String(), servedTime.String(), calculateIcySleep(streamStart, servedTime).String())
 
 			// set the timer to the calculated sleep interval
 			nextRun.Reset(calculateIcySleep(streamStart, servedTime))
