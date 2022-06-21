@@ -137,14 +137,14 @@ func (f *fetcher) downloadSegment(s *m3u8.SegmentItem) error {
 		return nil
 	}
 
-	f.l.Debugf("downloading chunk %s", cn)
+	f.l.Debugf("downloading chunk %s from %s", cn, segmentURL.String())
 	r, err := f.hc.Get(segmentURL.String())
 	if err != nil {
 		return err
 	}
 	defer r.Body.Close()
 	if r.StatusCode != http.StatusOK {
-		return fmt.Errorf("wanted 200 from %s, got: %d", f.url.String(), r.StatusCode)
+		return fmt.Errorf("wanted 200 from %s, got: %d", segmentURL.String(), r.StatusCode)
 	}
 
 	if err := f.cs.WriteChunk(context.TODO(), cn, s.Duration, r.Body); err != nil {
