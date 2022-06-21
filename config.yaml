@@ -8,6 +8,6 @@ streams:
   #   nowPlayingURL: https://music.abcradio.net.au/api/v1/plays/triplej/now.json
   - id: doublej
     name: Double J
-    url: https://mediaserviceslive.akamaized.net/hls/live/2038315/doublejnsw/masterhq.m3u8
+    url: https://mediaserviceslive.akamaized.net/hls/live/2038315-b/doublejnsw/masterhq.m3u8
     baseTimezone: Australia/Sydney
     nowPlayingURL: https://music.abcradio.net.au/api/v1/plays/doublej/now.json
