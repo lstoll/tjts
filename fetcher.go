@@ -118,7 +118,12 @@ func (f *fetcher) getPlaylist() (*m3u8.Playlist, error) {
 }
 
 func (f *fetcher) downloadSegment(s *m3u8.SegmentItem) error {
-	cn, err := chunkNameFromURL(s.Segment)
+	segmentURL, err := f.resolveSegmentURL(s.Segment)
+	if err != nil {
+		return err
+	}
+
+	cn, err := chunkNameFromURL(segmentURL.String())
 	if err != nil {
 		return err
 	}
@@ -133,7 +138,7 @@ func (f *fetcher) downloadSegment(s *m3u8.SegmentItem) error {
 	}
 
 	f.l.Debugf("downloading chunk %s", cn)
-	r, err := f.hc.Get(s.Segment)
+	r, err := f.hc.Get(segmentURL.String())
 	if err != nil {
 		return err
 	}
@@ -147,6 +152,14 @@ func (f *fetcher) downloadSegment(s *m3u8.SegmentItem) error {
 	}
 
 	return nil
+}
+
+func (f *fetcher) resolveSegmentURL(segment string) (*url.URL, error) {
+	segmentURL, err := url.Parse(segment)
+	if err != nil {
+		return nil, fmt.Errorf("parsing segment %s as URL: %w", segment, err)
+	}
+	return f.url.ResolveReference(segmentURL), nil
 }
 
 func chunkNameFromURL(u string) (string, error) {
