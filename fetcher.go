@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -61,7 +62,7 @@ func (f *fetcher) Run() error {
 			f.l.Debug("tick")
 
 			// we don't hard error in here, assume we will retry/recover
-			pl, err := f.getPlaylist()
+			pl, plurl, err := f.getPlaylist(f.url)
 			if err != nil {
 				fetchErrorCount.WithLabelValues(f.streamID).Inc()
 				f.l.WithError(err).Warn("getting playlist")
@@ -71,7 +72,7 @@ func (f *fetcher) Run() error {
 			var td time.Duration
 
 			for _, s := range pl.Segments() {
-				if err := f.downloadSegment(s); err != nil {
+				if err := f.downloadSegment(plurl, s); err != nil {
 					fetchErrorCount.WithLabelValues(f.streamID).Inc()
 					f.l.WithError(err).Warn("downloading segment")
 					continue
@@ -100,25 +101,53 @@ func (f *fetcher) Interrupt(_ error) {
 	f.stopC <- struct{}{}
 }
 
-func (f *fetcher) getPlaylist() (*m3u8.Playlist, error) {
-	r, err := f.hc.Get(f.url.String())
+func (f *fetcher) getPlaylist(u *url.URL) (*m3u8.Playlist, *url.URL, error) {
+	r, err := f.hc.Get(u.String())
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer r.Body.Close()
 	if r.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("wanted 200 from %s, got: %d", f.url.String(), r.StatusCode)
+		return nil, nil, fmt.Errorf("wanted 200 from %s, got: %d", u.String(), r.StatusCode)
 	}
 
 	pl, err := m3u8.Read(r.Body)
 	if err != nil {
-		return nil, fmt.Errorf("reading playlist from %s: %v", f.url.String(), err)
+		return nil, nil, fmt.Errorf("reading playlist from %s: %v", u.String(), err)
 	}
-	return pl, nil
+
+	if pl.IsMaster() {
+		// master playlist links others...
+		var best *m3u8.PlaylistItem
+		for _, i := range pl.Items {
+			if i, ok := i.(*m3u8.PlaylistItem); ok {
+				if best == nil || i.Bandwidth > best.Bandwidth {
+					best = i
+				}
+			}
+		}
+		if best == nil {
+			return nil, nil, errors.New("can't find anything in the master playlist")
+		}
+		f.l.Debugf("%s is a master playlist, using entry with bandwidth %d", u.String(), best.Bandwidth)
+		// recurse to get the actual items we want
+		u, err := resolveSegmentURL(r.Request.URL, best.URI)
+		if err != nil {
+			return nil, nil, fmt.Errorf("resolving playlist url %s: %w", best.URI, err)
+		}
+		return f.getPlaylist(u)
+	}
+
+	return pl, r.Request.URL, nil
 }
 
-func (f *fetcher) downloadSegment(s *m3u8.SegmentItem) error {
-	cn, err := chunkNameFromURL(s.Segment)
+func (f *fetcher) downloadSegment(playlistURL *url.URL, s *m3u8.SegmentItem) error {
+	segmentURL, err := resolveSegmentURL(playlistURL, s.Segment)
+	if err != nil {
+		return err
+	}
+
+	cn, err := chunkNameFromURL(segmentURL.String())
 	if err != nil {
 		return err
 	}
@@ -132,14 +161,14 @@ func (f *fetcher) downloadSegment(s *m3u8.SegmentItem) error {
 		return nil
 	}
 
-	f.l.Debugf("downloading chunk %s", cn)
-	r, err := f.hc.Get(s.Segment)
+	f.l.Debugf("downloading chunk %s from %s", cn, segmentURL.String())
+	r, err := f.hc.Get(segmentURL.String())
 	if err != nil {
 		return err
 	}
 	defer r.Body.Close()
 	if r.StatusCode != http.StatusOK {
-		return fmt.Errorf("wanted 200 from %s, got: %d", f.url.String(), r.StatusCode)
+		return fmt.Errorf("wanted 200 from %s, got: %d", segmentURL.String(), r.StatusCode)
 	}
 
 	if err := f.cs.WriteChunk(context.TODO(), cn, s.Duration, r.Body); err != nil {
@@ -147,6 +176,14 @@ func (f *fetcher) downloadSegment(s *m3u8.SegmentItem) error {
 	}
 
 	return nil
+}
+
+func resolveSegmentURL(playlistURL *url.URL, segment string) (*url.URL, error) {
+	segmentURL, err := url.Parse(segment)
+	if err != nil {
+		return nil, fmt.Errorf("parsing segment %s as URL: %w", segment, err)
+	}
+	return playlistURL.ResolveReference(segmentURL), nil
 }
 
 func chunkNameFromURL(u string) (string, error) {

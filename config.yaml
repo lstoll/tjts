@@ -3,11 +3,11 @@ dbPath: tmp/state.db
 streams:
   # - id: triplej
   #   name: Triple J
-  #   url: https://abcradiolivehls-lh.akamaihd.net/i/triplejnsw_1@327300/index_64_a-p.m3u8?sd=10&rebase=on
+  #   url: https://mediaserviceslive.akamaized.net/hls/live/2038308/triplejnsw/master.m3u8
   #   baseTimezone: Australia/Sydney
   #   nowPlayingURL: https://music.abcradio.net.au/api/v1/plays/triplej/now.json
   - id: doublej
     name: Double J
-    url: https://abcradiolivehls-lh.akamaihd.net/i/doublejnsw_1@327293/index_64_a-p.m3u8?sd=10&rebase=on
+    url: https://mediaserviceslive.akamaized.net/hls/live/2038315/doublejnsw/master.m3u8
     baseTimezone: Australia/Sydney
     nowPlayingURL: https://music.abcradio.net.au/api/v1/plays/doublej/now.json
