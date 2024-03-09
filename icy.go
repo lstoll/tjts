@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/Comcast/gots/packet"
-	"github.com/Comcast/gots/pes"
-	"github.com/Comcast/gots/psi"
+	"github.com/Comcast/gots/v2/packet"
+	"github.com/Comcast/gots/v2/pes"
+	"github.com/Comcast/gots/v2/psi"
 	"github.com/sirupsen/logrus"
 )
 
