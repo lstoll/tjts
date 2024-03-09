@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.3
 
-FROM golang:1.18 AS build
+FROM golang:1-bookworm AS build
 
 RUN mkdir -p /src/tjts
 WORKDIR /src/tjts
@@ -12,7 +12,7 @@ COPY . .
 
 RUN --mount=type=cache,target=/root/.cache/go-build go install ./...
 
-FROM ubuntu:focal
+FROM debian:bookworm
 
 RUN adduser \
     --disabled-password \
