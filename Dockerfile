@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.3
 
-FROM golang:1-bookworm AS build
+FROM golang:1-trixie AS build
 
 RUN mkdir -p /src/tjts
 WORKDIR /src/tjts
@@ -12,16 +12,11 @@ COPY . .
 
 RUN --mount=type=cache,target=/root/.cache/go-build go install ./...
 
-FROM debian:bookworm
+FROM debian:trixie-slim
 
-RUN adduser \
-    --disabled-password \
-    --gecos "" \
-    --home "/tmp" \
-    --shell "/sbin/nologin" \
-    --no-create-home \
-    --uid 1000 \
-    app
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+
+RUN useradd --uid 1000 --home-dir /tmp --shell /sbin/nologin --no-create-home app
 
 RUN apt-get update && \
     apt-get upgrade -y && \

@@ -151,9 +151,9 @@ func (p *playlist) ServePlaylist(w http.ResponseWriter, r *http.Request) {
 	}
 
 	pl := m3u8.Playlist{
-		Cache:    boolPtr(true),
+		Cache:    new(true),
 		Sequence: sess.LatestSequence,
-		Version:  intPtr(4), // TODO - when would it not be?
+		Version:  new(4), // TODO - when would it not be?
 		Target:   maxDuration(rcs),
 		Live:     true,
 	}
@@ -180,12 +180,14 @@ func (p *playlist) ServePlaylist(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, pl.String())
 }
 
+//go:fix inline
 func boolPtr(b bool) *bool {
-	return &b
+	return new(b)
 }
 
+//go:fix inline
 func intPtr(i int) *int {
-	return &i
+	return new(i)
 }
 
 func maxDuration(sg []recordedChunk) int {

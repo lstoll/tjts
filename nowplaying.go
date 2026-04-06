@@ -40,50 +40,50 @@ type ABCNowPlayingEntity struct {
 	PlayedTime time.Time `json:"played_time"`
 	ServiceID  string    `json:"service_id"`
 	Recording  struct {
-		Entity      string      `json:"entity"`
-		Arid        string      `json:"arid"`
-		Title       string      `json:"title"`
-		Metadata    interface{} `json:"metadata"`
-		Description interface{} `json:"description"`
-		Duration    int         `json:"duration"`
+		Entity      string `json:"entity"`
+		Arid        string `json:"arid"`
+		Title       string `json:"title"`
+		Metadata    any    `json:"metadata"`
+		Description any    `json:"description"`
+		Duration    int    `json:"duration"`
 		Artists     []struct {
-			Entity  string        `json:"entity"`
-			Arid    string        `json:"arid"`
-			Name    string        `json:"name"`
-			Artwork []interface{} `json:"artwork"`
+			Entity  string `json:"entity"`
+			Arid    string `json:"arid"`
+			Name    string `json:"name"`
+			Artwork []any  `json:"artwork"`
 			Links   []struct {
-				Entity         string      `json:"entity"`
-				Arid           string      `json:"arid"`
-				URL            string      `json:"url"`
-				IDComponent    string      `json:"id_component"`
-				Title          string      `json:"title"`
-				MiniSynopsis   interface{} `json:"mini_synopsis"`
-				ShortSynopsis  interface{} `json:"short_synopsis"`
-				MediumSynopsis interface{} `json:"medium_synopsis"`
-				Type           string      `json:"type"`
-				Provider       string      `json:"provider"`
-				External       bool        `json:"external"`
+				Entity         string `json:"entity"`
+				Arid           string `json:"arid"`
+				URL            string `json:"url"`
+				IDComponent    string `json:"id_component"`
+				Title          string `json:"title"`
+				MiniSynopsis   any    `json:"mini_synopsis"`
+				ShortSynopsis  any    `json:"short_synopsis"`
+				MediumSynopsis any    `json:"medium_synopsis"`
+				Type           string `json:"type"`
+				Provider       string `json:"provider"`
+				External       bool   `json:"external"`
 			} `json:"links"`
-			IsAustralian interface{} `json:"is_australian"`
-			Type         string      `json:"type"`
-			Role         interface{} `json:"role"`
+			IsAustralian any    `json:"is_australian"`
+			Type         string `json:"type"`
+			Role         any    `json:"role"`
 		} `json:"artists"`
 		Releases []struct {
-			Entity  string      `json:"entity"`
-			Arid    string      `json:"arid"`
-			Title   string      `json:"title"`
-			Format  interface{} `json:"format"`
+			Entity  string `json:"entity"`
+			Arid    string `json:"arid"`
+			Title   string `json:"title"`
+			Format  any    `json:"format"`
 			Artwork []struct {
-				Entity         string      `json:"entity"`
-				Arid           string      `json:"arid"`
-				URL            string      `json:"url"`
-				Type           string      `json:"type"`
-				Title          interface{} `json:"title"`
-				MiniSynopsis   interface{} `json:"mini_synopsis"`
-				ShortSynopsis  interface{} `json:"short_synopsis"`
-				MediumSynopsis interface{} `json:"medium_synopsis"`
-				Width          int         `json:"width"`
-				Height         int         `json:"height"`
+				Entity         string `json:"entity"`
+				Arid           string `json:"arid"`
+				URL            string `json:"url"`
+				Type           string `json:"type"`
+				Title          any    `json:"title"`
+				MiniSynopsis   any    `json:"mini_synopsis"`
+				ShortSynopsis  any    `json:"short_synopsis"`
+				MediumSynopsis any    `json:"medium_synopsis"`
+				Width          int    `json:"width"`
+				Height         int    `json:"height"`
 				Sizes          []struct {
 					URL         string `json:"url"`
 					Width       int    `json:"width"`
@@ -92,75 +92,75 @@ type ABCNowPlayingEntity struct {
 				} `json:"sizes"`
 			} `json:"artwork"`
 			Links []struct {
-				Entity         string      `json:"entity"`
-				Arid           string      `json:"arid"`
-				URL            string      `json:"url"`
-				IDComponent    string      `json:"id_component"`
-				Title          string      `json:"title"`
-				MiniSynopsis   interface{} `json:"mini_synopsis"`
-				ShortSynopsis  interface{} `json:"short_synopsis"`
-				MediumSynopsis interface{} `json:"medium_synopsis"`
-				Type           string      `json:"type"`
-				Provider       string      `json:"provider"`
-				External       bool        `json:"external"`
+				Entity         string `json:"entity"`
+				Arid           string `json:"arid"`
+				URL            string `json:"url"`
+				IDComponent    string `json:"id_component"`
+				Title          string `json:"title"`
+				MiniSynopsis   any    `json:"mini_synopsis"`
+				ShortSynopsis  any    `json:"short_synopsis"`
+				MediumSynopsis any    `json:"medium_synopsis"`
+				Type           string `json:"type"`
+				Provider       string `json:"provider"`
+				External       bool   `json:"external"`
 			} `json:"links"`
 			Artists []struct {
-				Entity  string        `json:"entity"`
-				Arid    string        `json:"arid"`
-				Name    string        `json:"name"`
-				Artwork []interface{} `json:"artwork"`
+				Entity  string `json:"entity"`
+				Arid    string `json:"arid"`
+				Name    string `json:"name"`
+				Artwork []any  `json:"artwork"`
 				Links   []struct {
-					Entity         string      `json:"entity"`
-					Arid           string      `json:"arid"`
-					URL            string      `json:"url"`
-					IDComponent    string      `json:"id_component"`
-					Title          string      `json:"title"`
-					MiniSynopsis   interface{} `json:"mini_synopsis"`
-					ShortSynopsis  interface{} `json:"short_synopsis"`
-					MediumSynopsis interface{} `json:"medium_synopsis"`
-					Type           string      `json:"type"`
-					Provider       string      `json:"provider"`
-					External       bool        `json:"external"`
+					Entity         string `json:"entity"`
+					Arid           string `json:"arid"`
+					URL            string `json:"url"`
+					IDComponent    string `json:"id_component"`
+					Title          string `json:"title"`
+					MiniSynopsis   any    `json:"mini_synopsis"`
+					ShortSynopsis  any    `json:"short_synopsis"`
+					MediumSynopsis any    `json:"medium_synopsis"`
+					Type           string `json:"type"`
+					Provider       string `json:"provider"`
+					External       bool   `json:"external"`
 				} `json:"links"`
-				IsAustralian interface{} `json:"is_australian"`
-				Type         string      `json:"type"`
-				Role         interface{} `json:"role"`
+				IsAustralian any    `json:"is_australian"`
+				Type         string `json:"type"`
+				Role         any    `json:"role"`
 			} `json:"artists"`
-			RecordLabel    interface{} `json:"record_label"`
-			ReleaseYear    string      `json:"release_year"`
-			ReleaseAlbumID interface{} `json:"release_album_id"`
+			RecordLabel    any    `json:"record_label"`
+			ReleaseYear    string `json:"release_year"`
+			ReleaseAlbumID any    `json:"release_album_id"`
 		} `json:"releases"`
-		Artwork []interface{} `json:"artwork"`
+		Artwork []any `json:"artwork"`
 		Links   []struct {
-			Entity         string      `json:"entity"`
-			Arid           string      `json:"arid"`
-			URL            string      `json:"url"`
-			IDComponent    string      `json:"id_component"`
-			Title          string      `json:"title"`
-			MiniSynopsis   interface{} `json:"mini_synopsis"`
-			ShortSynopsis  interface{} `json:"short_synopsis"`
-			MediumSynopsis interface{} `json:"medium_synopsis"`
-			Type           string      `json:"type"`
-			Provider       string      `json:"provider"`
-			External       bool        `json:"external"`
+			Entity         string `json:"entity"`
+			Arid           string `json:"arid"`
+			URL            string `json:"url"`
+			IDComponent    string `json:"id_component"`
+			Title          string `json:"title"`
+			MiniSynopsis   any    `json:"mini_synopsis"`
+			ShortSynopsis  any    `json:"short_synopsis"`
+			MediumSynopsis any    `json:"medium_synopsis"`
+			Type           string `json:"type"`
+			Provider       string `json:"provider"`
+			External       bool   `json:"external"`
 		} `json:"links"`
 	} `json:"recording"`
 	Release struct {
-		Entity  string      `json:"entity"`
-		Arid    string      `json:"arid"`
-		Title   string      `json:"title"`
-		Format  interface{} `json:"format"`
+		Entity  string `json:"entity"`
+		Arid    string `json:"arid"`
+		Title   string `json:"title"`
+		Format  any    `json:"format"`
 		Artwork []struct {
-			Entity         string      `json:"entity"`
-			Arid           string      `json:"arid"`
-			URL            string      `json:"url"`
-			Type           string      `json:"type"`
-			Title          interface{} `json:"title"`
-			MiniSynopsis   interface{} `json:"mini_synopsis"`
-			ShortSynopsis  interface{} `json:"short_synopsis"`
-			MediumSynopsis interface{} `json:"medium_synopsis"`
-			Width          int         `json:"width"`
-			Height         int         `json:"height"`
+			Entity         string `json:"entity"`
+			Arid           string `json:"arid"`
+			URL            string `json:"url"`
+			Type           string `json:"type"`
+			Title          any    `json:"title"`
+			MiniSynopsis   any    `json:"mini_synopsis"`
+			ShortSynopsis  any    `json:"short_synopsis"`
+			MediumSynopsis any    `json:"medium_synopsis"`
+			Width          int    `json:"width"`
+			Height         int    `json:"height"`
 			Sizes          []struct {
 				URL         string `json:"url"`
 				Width       int    `json:"width"`
@@ -169,43 +169,43 @@ type ABCNowPlayingEntity struct {
 			} `json:"sizes"`
 		} `json:"artwork"`
 		Links []struct {
-			Entity         string      `json:"entity"`
-			Arid           string      `json:"arid"`
-			URL            string      `json:"url"`
-			IDComponent    string      `json:"id_component"`
-			Title          string      `json:"title"`
-			MiniSynopsis   interface{} `json:"mini_synopsis"`
-			ShortSynopsis  interface{} `json:"short_synopsis"`
-			MediumSynopsis interface{} `json:"medium_synopsis"`
-			Type           string      `json:"type"`
-			Provider       string      `json:"provider"`
-			External       bool        `json:"external"`
+			Entity         string `json:"entity"`
+			Arid           string `json:"arid"`
+			URL            string `json:"url"`
+			IDComponent    string `json:"id_component"`
+			Title          string `json:"title"`
+			MiniSynopsis   any    `json:"mini_synopsis"`
+			ShortSynopsis  any    `json:"short_synopsis"`
+			MediumSynopsis any    `json:"medium_synopsis"`
+			Type           string `json:"type"`
+			Provider       string `json:"provider"`
+			External       bool   `json:"external"`
 		} `json:"links"`
 		Artists []struct {
-			Entity  string        `json:"entity"`
-			Arid    string        `json:"arid"`
-			Name    string        `json:"name"`
-			Artwork []interface{} `json:"artwork"`
+			Entity  string `json:"entity"`
+			Arid    string `json:"arid"`
+			Name    string `json:"name"`
+			Artwork []any  `json:"artwork"`
 			Links   []struct {
-				Entity         string      `json:"entity"`
-				Arid           string      `json:"arid"`
-				URL            string      `json:"url"`
-				IDComponent    string      `json:"id_component"`
-				Title          string      `json:"title"`
-				MiniSynopsis   interface{} `json:"mini_synopsis"`
-				ShortSynopsis  interface{} `json:"short_synopsis"`
-				MediumSynopsis interface{} `json:"medium_synopsis"`
-				Type           string      `json:"type"`
-				Provider       string      `json:"provider"`
-				External       bool        `json:"external"`
+				Entity         string `json:"entity"`
+				Arid           string `json:"arid"`
+				URL            string `json:"url"`
+				IDComponent    string `json:"id_component"`
+				Title          string `json:"title"`
+				MiniSynopsis   any    `json:"mini_synopsis"`
+				ShortSynopsis  any    `json:"short_synopsis"`
+				MediumSynopsis any    `json:"medium_synopsis"`
+				Type           string `json:"type"`
+				Provider       string `json:"provider"`
+				External       bool   `json:"external"`
 			} `json:"links"`
-			IsAustralian interface{} `json:"is_australian"`
-			Type         string      `json:"type"`
-			Role         interface{} `json:"role"`
+			IsAustralian any    `json:"is_australian"`
+			Type         string `json:"type"`
+			Role         any    `json:"role"`
 		} `json:"artists"`
-		RecordLabel    interface{} `json:"record_label"`
-		ReleaseYear    string      `json:"release_year"`
-		ReleaseAlbumID interface{} `json:"release_album_id"`
+		RecordLabel    any    `json:"record_label"`
+		ReleaseYear    string `json:"release_year"`
+		ReleaseAlbumID any    `json:"release_album_id"`
 	} `json:"release"`
 }
 
