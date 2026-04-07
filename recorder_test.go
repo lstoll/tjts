@@ -11,29 +11,21 @@ import (
 func TestSequenceFor(t *testing.T) {
 	ctx := context.Background()
 
-	const (
-		testStreamID = "sid"
-	)
+	const testStreamID = "sid"
 
-	db, err := newDB(t.TempDir() + "/db")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	r := &recorder{db: db}
+	idx := newChunkIndex()
 
 	now := time.Now()
 
 	for i := 1; i <= 20; i++ {
-		if err := r.RecordChunk(ctx, testStreamID, fmt.Sprintf("chunk-%d", i), 10, now.Add(time.Second*10*time.Duration(i))); err != nil {
+		if err := idx.RecordChunk(ctx, testStreamID, fmt.Sprintf("chunk-%d", i), 10, now.Add(time.Second*10*time.Duration(i))); err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	// move now forward until the "end" of the recorded chunks
 	now = now.Add(20 * 10 * time.Second)
 
-	seq, err := r.SequenceFor(ctx, testStreamID, now.Add(-101*time.Second))
+	seq, err := idx.SequenceFor(ctx, testStreamID, now.Add(-101*time.Second))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,7 +34,7 @@ func TestSequenceFor(t *testing.T) {
 		t.Fatalf("want seq 9, got: %d", seq)
 	}
 
-	seq, err = r.SequenceFor(ctx, testStreamID, now.Add(-1*time.Hour))
+	seq, err = idx.SequenceFor(ctx, testStreamID, now.Add(-1*time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,26 +47,19 @@ func TestSequenceFor(t *testing.T) {
 func TestChunks(t *testing.T) {
 	ctx := context.Background()
 
-	const (
-		testStreamID = "sid"
-	)
+	const testStreamID = "sid"
 
-	db, err := newDB(t.TempDir() + "/db")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	r := &recorder{db: db}
+	idx := newChunkIndex()
 
 	now := time.Now()
 
 	for i := 1; i <= 20; i++ {
-		if err := r.RecordChunk(ctx, testStreamID, fmt.Sprintf("chunk-%d", i), 10, now.Add(time.Second*10*time.Duration(i))); err != nil {
+		if err := idx.RecordChunk(ctx, testStreamID, fmt.Sprintf("chunk-%d", i), 10, now.Add(time.Second*10*time.Duration(i))); err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	cs, err := r.Chunks(ctx, testStreamID, 10, 3)
+	cs, err := idx.Chunks(ctx, testStreamID, 10, 3)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,25 +86,18 @@ func TestChunkRecording(t *testing.T) {
 		streamTwo = "s-2"
 	)
 
-	db, err := newDB(t.TempDir() + "/db")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	r := &recorder{db: db}
+	idx := newChunkIndex()
 
 	now := time.Now()
 
-	// try and force a bit of concurrency by inserting in goroutines
 	done := make(chan struct{})
-
 	var ierrs []error
 
 	for _, sn := range []string{streamOne, streamTwo} {
 		go func(sn string) {
 			defer func() { done <- struct{}{} }()
 			for i := 1; i <= 5; i++ {
-				if err := r.RecordChunk(ctx, sn, fmt.Sprintf("chunk-%d", i), 10, now.Add(time.Second*10*time.Duration(i))); err != nil {
+				if err := idx.RecordChunk(ctx, sn, fmt.Sprintf("chunk-%d", i), 10, now.Add(time.Second*10*time.Duration(i))); err != nil {
 					ierrs = append(ierrs, err)
 				}
 			}
@@ -134,27 +112,17 @@ func TestChunkRecording(t *testing.T) {
 	}
 
 	for _, sn := range []string{streamOne, streamTwo} {
-		var sids []int
-
-		rows, err := r.db.QueryContext(ctx, "select sequence from chunks where stream_id = $1", sn)
+		cs, err := idx.Chunks(ctx, sn, 1, 10)
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer rows.Close()
-		for rows.Next() {
-			var i int
-			if err := rows.Scan(&i); err != nil {
-				t.Fatal(err)
+		if len(cs) != 5 {
+			t.Fatalf("stream %s: want 5 chunks, got %d", sn, len(cs))
+		}
+		for j, c := range cs {
+			if c.Sequence != j+1 {
+				t.Errorf("stream %s: want sequence %d at %d, got %d", sn, j+1, j, c.Sequence)
 			}
-			sids = append(sids, i)
-		}
-		if err := rows.Err(); err != nil {
-			t.Fatalf("in result iteration: %v", err)
-		}
-
-		want := []int{1, 2, 3, 4, 5}
-		if !reflect.DeepEqual(want, sids) {
-			t.Errorf("stream %s: want %v got %v", sn, want, sids)
 		}
 	}
 }

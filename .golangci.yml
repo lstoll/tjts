@@ -1,21 +1,29 @@
+version: "2"
+
 run:
-  deadline: 5m
+  timeout: 5m
 
 output:
-  format: colored-line-number
+  formats:
+    text:
+      path: stdout
+      colors: true
 
-issues:
-  exclude-use-default: false
-  exclude:
-    - "exported \\w+ (\\S*['.]*)([a-zA-Z'.*]*) should have comment( \\(or a comment on this block\\))? or be unexported"
-    - "Error return value of .((os\\.)?std(out|err)\\..*|.*Close|.*Flush|os\\.Remove(All)?|.*printf?|os\\.(Un)?Setenv). is not checked"
+formatters:
+  enable:
+    - goimports
 
 linters:
   enable:
     - errcheck
-    - goimports
     - govet
     - misspell
     - staticcheck
     - unused
     - unparam
+  exclusions:
+    rules:
+      - path: .+\.go$
+        text: "exported \\w+ (\\S*['.]*)([a-zA-Z'.*]*) should have comment( \\(or a comment on this block\\))? or be unexported"
+      - path: .+\.go$
+        text: "Error return value of .((os\\.)?std(out|err)\\..*|.*Close|.*Flush|os\\.Remove(All)?|.*printf?|os\\.(Un)?Setenv). is not checked"

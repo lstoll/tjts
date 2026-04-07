@@ -152,11 +152,7 @@ func (f *fetcher) downloadSegment(playlistURL *url.URL, s *m3u8.SegmentItem) err
 		return err
 	}
 
-	ok, err := f.cs.ChunkExists(context.TODO(), cn)
-	if err != nil {
-		return fmt.Errorf("checking chunk existence: %v", err)
-	}
-	if ok {
+	if f.cs.ChunkExists(context.TODO(), cn) {
 		f.l.Debugf("chunk %s exists, skipping", cn)
 		return nil
 	}

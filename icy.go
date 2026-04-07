@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -24,21 +25,26 @@ type icyServer struct {
 
 	streams []configStream
 
-	indexer *recorder
-	mapper  *diskChunkStore
+	indexer *chunkIndex
+	store   *s3ChunkStore
 }
 
-func newIcyServer(l logrus.FieldLogger, s []configStream, i *recorder, u *diskChunkStore) *icyServer {
+func newIcyServer(l logrus.FieldLogger, s []configStream, i *chunkIndex, st *s3ChunkStore) *icyServer {
 	return &icyServer{
 		l:       l,
 		indexer: i,
 		streams: s,
-		mapper:  u,
+		store:   st,
 	}
 }
 
 func (i *icyServer) ServeIcecast(w http.ResponseWriter, r *http.Request) {
 	i.l.Debugf("serving request for %s", r.URL.String())
+
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
 
 	ctx := r.Context()
 	l := i.l
@@ -86,6 +92,7 @@ func (i *icyServer) ServeIcecast(w http.ResponseWriter, r *http.Request) {
 
 	// now we want to get a sequence, stream it's contents, and sleep.
 
+	w.Header().Set("X-Accel-Buffering", "no")
 	w.Header().Set("Content-Type", "audio/aacp")
 	w.Header().Set("icy-name", stationName)
 
@@ -118,102 +125,9 @@ func (i *icyServer) ServeIcecast(w http.ResponseWriter, r *http.Request) {
 
 			l = l.WithField("seq", c.Sequence).WithField("cid", c.ChunkID)
 
-			cr, err := i.mapper.ReaderFor(streamID, c.ChunkID)
+			rawAAC, err := i.streamChunkBody(ctx, w, l, streamID, c)
 			if err != nil {
-				serveEndpointErrorCount.WithLabelValues("icy", streamID).Inc()
-				l.WithError(err).Error("getting chunk reader")
 				return
-			}
-
-			/* more gross shit in some gross code
-			 * clean this up a bit to be better about content type management, and
-			 * structure in to not-big-if-else
-			 */
-			var rawAAC bool
-			if filepath.Ext(c.ChunkID) == ".aac" {
-				rawAAC = true
-				// this is a raw aac blob, just send it
-				if _, err := io.Copy(w, cr); err != nil {
-					serveEndpointErrorCount.WithLabelValues("icy", streamID).Inc()
-					l.WithError(err).Error("writing aac chunk to consumer")
-					return
-				}
-			} else {
-				/* assume it's a ts stream, like it used to be */
-
-				// refs:
-				// * https://tsduck.io/download/docs/mpegts-introduction.pdf
-
-				// TODO - this is 100% filled with hardcoded assumptions about the
-				// stream. We need to determining the right thing to demux by using
-				// the stream map, and also do some checking on the PES header data
-				// to make sure we're extracting the right shit
-
-				pat, err := psi.ReadPAT(cr)
-				if err != nil {
-					serveEndpointErrorCount.WithLabelValues("icy", streamID).Inc()
-					l.WithError(err).Error("getting pat")
-					return
-				}
-				_ = pat
-				// l.Debugf("pat %#v", pat)
-
-				const audioPid = 256
-
-				var pkt packet.Packet
-				for read, err := cr.Read(pkt[:]); read > 0 && err == nil; read, err = cr.Read(pkt[:]) {
-					if err != nil {
-						serveEndpointErrorCount.WithLabelValues("icy", streamID).Inc()
-						l.WithError(err).Error("reading packet")
-						return
-					}
-					if packet.Pid(&pkt) != audioPid {
-						// skip non aac stream
-						continue
-					}
-					if !pkt.HasPayload() {
-						// skip, nothing to stream
-						continue
-					}
-
-					// if we're here, we're running on the right packet ID stream
-
-					if packet.PayloadUnitStartIndicator(&pkt) {
-						// assume a PES header, extract it and return the data
-						ph, err := packet.PESHeader(&pkt)
-						if err != nil {
-							serveEndpointErrorCount.WithLabelValues("icy", streamID).Inc()
-							l.WithError(err).Errorf("getting packet header")
-							return
-						}
-						pes, err := pes.NewPESHeader(ph)
-						if err != nil {
-							serveEndpointErrorCount.WithLabelValues("icy", streamID).Inc()
-							l.WithError(err).Errorf("creating pes header")
-							return
-						}
-						if _, err := w.Write(pes.Data()); err != nil {
-							serveEndpointErrorCount.WithLabelValues("icy", streamID).Inc()
-							l.WithError(err).Error("writing packet")
-							return
-						}
-					} else {
-						// otherwise assume a continuation from the last pes header,
-						// so just stream it
-						pl, err := pkt.Payload()
-						if err != nil {
-							serveEndpointErrorCount.WithLabelValues("icy", streamID).Inc()
-							l.WithError(err).Error("getting packet payload")
-							return
-						}
-
-						if _, err := w.Write(pl); err != nil {
-							serveEndpointErrorCount.WithLabelValues("icy", streamID).Inc()
-							l.WithError(err).Error("writing packet")
-							return
-						}
-					}
-				}
 			}
 
 			// We want to make sure the user has been served enough data for the
@@ -235,6 +149,86 @@ func (i *icyServer) ServeIcecast(w http.ResponseWriter, r *http.Request) {
 			nextRun.Reset(calculateIcySleep(streamStart, servedTime))
 		}
 	}
+}
+
+func (i *icyServer) streamChunkBody(ctx context.Context, w http.ResponseWriter, l logrus.FieldLogger, streamID string, c recordedChunk) (rawAAC bool, err error) {
+	cr, err := i.store.GetObjectReader(ctx, c)
+	if err != nil {
+		serveEndpointErrorCount.WithLabelValues("icy", streamID).Inc()
+		l.WithError(err).Error("getting chunk reader")
+		return false, err
+	}
+	defer cr.Close()
+
+	/* more gross shit in some gross code
+	 * clean this up a bit to be better about content type management, and
+	 * structure in to not-big-if-else
+	 */
+	if filepath.Ext(c.ChunkID) == ".aac" {
+		rawAAC = true
+		if _, err := io.Copy(w, cr); err != nil {
+			serveEndpointErrorCount.WithLabelValues("icy", streamID).Inc()
+			l.WithError(err).Error("writing aac chunk to consumer")
+			return true, err
+		}
+		return true, nil
+	}
+
+	/* assume it's a ts stream, like it used to be */
+
+	pat, err := psi.ReadPAT(cr)
+	if err != nil {
+		serveEndpointErrorCount.WithLabelValues("icy", streamID).Inc()
+		l.WithError(err).Error("getting pat")
+		return false, err
+	}
+	_ = pat
+
+	const audioPid = 256
+
+	var pkt packet.Packet
+	for read, err := cr.Read(pkt[:]); read > 0 && err == nil; read, err = cr.Read(pkt[:]) {
+		if packet.Pid(&pkt) != audioPid {
+			continue
+		}
+		if !pkt.HasPayload() {
+			continue
+		}
+
+		if packet.PayloadUnitStartIndicator(&pkt) {
+			ph, err := packet.PESHeader(&pkt)
+			if err != nil {
+				serveEndpointErrorCount.WithLabelValues("icy", streamID).Inc()
+				l.WithError(err).Errorf("getting packet header")
+				return false, err
+			}
+			pes, err := pes.NewPESHeader(ph)
+			if err != nil {
+				serveEndpointErrorCount.WithLabelValues("icy", streamID).Inc()
+				l.WithError(err).Errorf("creating pes header")
+				return false, err
+			}
+			if _, err := w.Write(pes.Data()); err != nil {
+				serveEndpointErrorCount.WithLabelValues("icy", streamID).Inc()
+				l.WithError(err).Error("writing packet")
+				return false, err
+			}
+		} else {
+			pl, err := pkt.Payload()
+			if err != nil {
+				serveEndpointErrorCount.WithLabelValues("icy", streamID).Inc()
+				l.WithError(err).Error("getting packet payload")
+				return false, err
+			}
+
+			if _, err := w.Write(pl); err != nil {
+				serveEndpointErrorCount.WithLabelValues("icy", streamID).Inc()
+				l.WithError(err).Error("writing packet")
+				return false, err
+			}
+		}
+	}
+	return false, nil
 }
 
 var nowFn = time.Now

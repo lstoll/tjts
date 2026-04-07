@@ -10,35 +10,32 @@ import (
 )
 
 const (
-	defaultMaxOffset = 24 * time.Hour
+	defaultMaxOffset  = 24 * time.Hour
+	defaultPresignTTL = time.Hour
 )
 
 type configStream struct {
-	// ID is a unique identifier for this stream. lowercase alpha only.
-	ID string `yaml:"id"`
-	// Name of the stream, when displaying it
-	Name string `yaml:"name"`
-	// URL to the hls m3u8 for this stream
-	URL string `yaml:"url"`
-	// BaseTimezone is the timezone the stream is originally in
+	ID           string `yaml:"id"`
+	Name         string `yaml:"name"`
+	URL          string `yaml:"url"`
 	BaseTimezone string `yaml:"baseTimezone"`
-	// NowPlayingURL serves the ABC formatted now playing metadata. If set, we
-	// will fetch and track this
-	NowPlayingURL string `yaml:"nowPlayingURL"`
 }
 
-// configFile maps our on-disk config to something usable.
+// s3Config configures S3-compatible object storage (DigitalOcean Spaces, MinIO, AWS S3).
+type s3Config struct {
+	Endpoint     string        `yaml:"endpoint"`
+	Region       string        `yaml:"region"`
+	Bucket       string        `yaml:"bucket"`
+	AccessKey    string        `yaml:"accessKey"`
+	SecretKey    string        `yaml:"secretKey"`
+	UsePathStyle bool          `yaml:"usePathStyle"`
+	PresignTTL   time.Duration `yaml:"presignTTL"`
+}
+
 type configFile struct {
-	// ChunkDir is the root path on the filesystem where we store media chunks.
-	// Chunks will be stored in a per-stream dir under this
-	ChunkDir string `yaml:"chunkDir"`
-	// DBPath is where the sqlite state DB will live
-	DBPath string `yaml:"dbPath"`
-	// MaxOffsetTime is how long in the past we will keep media around, i.e the
-	// maximum time one can offset
-	MaxOffsetTime time.Duration `yaml:"maxOffset"`
-	// Streams is an array of stations to cache and serve
-	Streams []configStream `yaml:"streams"`
+	S3            s3Config       `yaml:"s3"`
+	MaxOffsetTime time.Duration  `yaml:"maxOffset"`
+	Streams       []configStream `yaml:"streams"`
 }
 
 func loadAndValdiateConfig(path string) (configFile, error) {
@@ -55,11 +52,11 @@ func loadAndValdiateConfig(path string) (configFile, error) {
 
 	var ems []string
 
-	if cf.ChunkDir == "" {
-		ems = append(ems, "chunkDir must be specified")
+	if cf.S3.Bucket == "" {
+		ems = append(ems, "s3.bucket must be specified")
 	}
-	if cf.DBPath == "" {
-		ems = append(ems, "dbPath must be specified")
+	if cf.S3.Region == "" {
+		ems = append(ems, "s3.region must be specified")
 	}
 	if len(cf.Streams) == 0 {
 		ems = append(ems, "must specify at least one stream")
@@ -68,7 +65,6 @@ func loadAndValdiateConfig(path string) (configFile, error) {
 		if s.ID == "" {
 			ems = append(ems, "streams must have id")
 		}
-		// TODO - id right format etc, no dupes
 		if s.Name == "" {
 			ems = append(ems, fmt.Sprintf("%s: stream must have name", s.ID))
 		}
@@ -78,11 +74,13 @@ func loadAndValdiateConfig(path string) (configFile, error) {
 		if s.BaseTimezone == "" {
 			ems = append(ems, fmt.Sprintf("%s: stream must have base timezone", s.ID))
 		}
-
 	}
 
 	if cf.MaxOffsetTime == 0 {
 		cf.MaxOffsetTime = defaultMaxOffset
+	}
+	if cf.S3.PresignTTL == 0 {
+		cf.S3.PresignTTL = defaultPresignTTL
 	}
 
 	if len(ems) > 0 {

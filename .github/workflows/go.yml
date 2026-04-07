@@ -20,9 +20,6 @@ jobs:
         go-version: stable
       id: go
 
-    - name: Check out code into the Go module directory
-      uses: actions/checkout@v2
-
     - name: Get dependencies
       run: go mod download
 
@@ -33,4 +30,6 @@ jobs:
       run: go test -v ./...
 
     - name: Lint
-      uses: golangci/golangci-lint-action@v2
+      uses: golangci/golangci-lint-action@v9
+      with:
+        version: v2.11

@@ -2,70 +2,70 @@ package main
 
 import (
 	"context"
-	"database/sql"
-	"encoding/json"
-	"fmt"
+	"sync"
 	"time"
 )
 
-// sessionData is the persisted state for a session
-//
-// TODO - back this on to something persistent, like the DB
+// sessionData is per-listener HLS state (one random sid per player), held only in RAM.
+// Process restart or pod loss clears all sessions; clients re-hit ?stream=&tz= like a new ICY connection.
 type sessionData struct {
-	// LatestSequence shows the newest sequence we've served. This won't be the
-	// latest overall, but the sequence for the first media segment in the
-	// playlist (i.e what we set EXT-X-MEDIA-SEQUENCE to)
-	LatestSequence int `json:"latestSequence"`
-	// IntroducedAt records when we first saw it
-	IntroducedAt time.Time `json:"introducedAt"`
-
-	StreamID string `json:"streamID"`
-	Timezone string `json:"timezone"`
+	LatestSequence int
+	IntroducedAt   time.Time
+	StreamID       string
+	Timezone       string
 }
 
-type sessionStore struct {
-	db *sql.DB
+type sessionEntry struct {
+	data      sessionData
+	updatedAt time.Time
 }
 
-func newSessionStore(db *sql.DB) *sessionStore {
-	return &sessionStore{
-		db: db,
-	}
+// hlsSessions is an in-memory sid → state map (not S3, not disk).
+type hlsSessions struct {
+	mu sync.RWMutex
+	m  map[string]sessionEntry
 }
 
-// Get fetches or initializes session data for a given session
-func (s *sessionStore) Get(ctx context.Context, sid string) (sessionData, error) {
-	var data []byte
-
-	err := s.db.QueryRowContext(ctx, `select data from sessions where id = $1`, sid).Scan(&data)
-	if err == sql.ErrNoRows {
-		return sessionData{}, nil
-	} else if err != nil {
-		return sessionData{}, fmt.Errorf("getting session %s: %v", sid, err)
-	}
-
-	sd := sessionData{}
-
-	if err := json.Unmarshal(data, &sd); err != nil {
-		return sessionData{}, fmt.Errorf("unmarshaling session %s: %v", sid, err)
-	}
-
-	return sd, nil
+func newHLSSessions() *hlsSessions {
+	return &hlsSessions{m: make(map[string]sessionEntry)}
 }
 
-// Sets the data for the given session ID
-func (s *sessionStore) Set(ctx context.Context, sid string, d sessionData) error {
-	data, err := json.Marshal(&d)
-	if err != nil {
-		return fmt.Errorf("marshaling data for session %s: %v", sid, err)
+// Get returns session data or empty values if sid is unknown.
+func (s *hlsSessions) Get(_ context.Context, sid string) sessionData {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	e, ok := s.m[sid]
+	if !ok {
+		return sessionData{}
 	}
+	return e.data
+}
 
-	if _, err := s.db.ExecContext(ctx,
-		`insert or replace into sessions (id, data, updated_at) values ($1, $2, $3)`,
-		sid, data, time.Now()); err != nil {
-		return fmt.Errorf("upserting session %s: %v", sid, err)
+// Set replaces state for sid and refreshes updatedAt (for idle GC).
+func (s *hlsSessions) Set(_ context.Context, sid string, d sessionData) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.m[sid] = sessionEntry{data: d, updatedAt: time.Now().UTC()}
+}
+
+// replaceEntry overwrites a session (tests / simulating age).
+func (s *hlsSessions) replaceEntry(sid string, d sessionData, at time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.m[sid] = sessionEntry{data: d, updatedAt: at.UTC()}
+}
+
+// pruneSessions removes sessions not updated since cutoff.
+func (s *hlsSessions) pruneSessions(cutoff time.Time) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cutoff = cutoff.UTC()
+	n := 0
+	for id, e := range s.m {
+		if e.updatedAt.Before(cutoff) {
+			delete(s.m, id)
+			n++
+		}
 	}
-
-	return nil
-
+	return n
 }

@@ -7,10 +7,8 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"path/filepath"
 	"time"
 
-	// avoid having to bundle this in the docker image
 	_ "time/tzdata"
 
 	"github.com/oklog/run"
@@ -50,41 +48,42 @@ func main() {
 		l.Fatal(err)
 	}
 
-	// ensure db exists/make it, to avoid those out of memory errors
-	if err := os.MkdirAll(filepath.Dir(cfg.DBPath), 0755); err != nil {
-		l.Fatalf("ensuring %s exists: %v", filepath.Dir(cfg.DBPath), err)
-	}
-
-	db, err := newDB(cfg.DBPath)
+	s3Client, err := newS3Client(ctx, cfg.S3)
 	if err != nil {
-		l.WithError(err).Fatalf("opening database at %s", cfg.DBPath)
+		l.WithError(err).Fatal("s3 client")
 	}
-	defer db.Close()
+	if err := ensureS3Bucket(ctx, s3Client, cfg.S3.Bucket); err != nil {
+		l.WithError(err).Fatal("s3 bucket")
+	}
 
-	rec := newRecorder(db)
+	idx := newChunkIndex()
+	store := newS3ChunkStore(s3Client, cfg.S3.Bucket, cfg.S3.PresignTTL, idx)
 
-	ds := newDiskChunkStore(rec, cfg.ChunkDir, "/segment")
+	for _, s := range cfg.Streams {
+		if err := store.LoadStream(ctx, s.ID); err != nil {
+			l.WithError(err).Warnf("loading stream index for %s", s.ID)
+		}
+	}
 
-	ss := newSessionStore(db)
+	hlsSess := newHLSSessions()
+	pl := newPlaylist(l.WithField("component", "playlist"), cfg.Streams, idx, store, hlsSess)
+	is := newIcyServer(l.WithField("component", "icyServer"), cfg.Streams, idx, store)
 
-	pl := newPlaylist(l.WithField("component", "playlist"), cfg.Streams, rec, ds, ss)
-	is := newIcyServer(l.WithField("component", "icyServer"), cfg.Streams, rec, ds)
+	idxPage := newIndex(l.WithField("component", "index"), cfg.Streams)
 
-	idx := newIndex(l.WithField("component", "index"), cfg.Streams)
-
-	gc := newGarbageCollector(l.WithField("component", "gc"), db, ds)
+	gc := newGarbageCollector(l.WithField("component", "gc"), idx, store, hlsSess)
 
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/m3u8", pl.ServePlaylist)
+	mux.HandleFunc("/chunk", pl.ServeChunk)
 	mux.HandleFunc("/icecast", is.ServeIcecast)
-	mux.Handle("/segment/", http.StripPrefix("/segment/", ds))
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
 			http.Error(w, "Not Found", http.StatusNotFound)
 			return
 		}
-		idx.ServeHTTP(w, r)
+		idxPage.ServeHTTP(w, r)
 	})
 
 	srv := &http.Server{
@@ -99,10 +98,7 @@ func main() {
 	g.Add(gc.Run, gc.Interrupt)
 
 	for _, s := range cfg.Streams {
-		fcs, err := ds.FetcherStore(s.ID)
-		if err != nil {
-			l.WithError(err).Fatalf("creating fetcher store for %s", s.ID)
-		}
+		fcs := store.FetcherStore(s.ID)
 
 		f, err := newFetcher(l.WithField("component", "fetcher").WithField("stationid", s.ID), fcs, s.ID, s.URL)
 		if err != nil {
@@ -110,14 +106,6 @@ func main() {
 		}
 
 		g.Add(f.Run, f.Interrupt)
-
-		if s.NowPlayingURL != "" {
-			npf, err := newNowPlayingFetcher(l.WithField("component", "nowplaying").WithField("stationid", s.ID), db, s.ID, s.NowPlayingURL)
-			if err != nil {
-				l.WithError(err).Fatal("creating now playing fetcher")
-			}
-			g.Add(npf.Run, npf.Interrupt)
-		}
 	}
 
 	if *metricsListen != "" {
@@ -135,7 +123,7 @@ func main() {
 			Handler: pm,
 		}
 
-		prometheus.MustRegister(newMetricsCollector(db))
+		prometheus.MustRegister(newMetricsCollector(idx))
 
 		g.Add(func() error {
 			l.Printf("Listing for metrics on %s", *metricsListen)
@@ -157,7 +145,6 @@ func main() {
 		l.Infof("listening on %s", *listen)
 		return srv.ListenAndServe()
 	}, func(error) {
-		// use a new context, as upstream will be canceled by now
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = srv.Shutdown(ctx)

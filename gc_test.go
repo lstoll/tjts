@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"testing"
 	"time"
@@ -10,69 +9,59 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+type recordingDeleter struct {
+	keys []string
+}
+
+func (r *recordingDeleter) DeleteObject(_ context.Context, key string) error {
+	r.keys = append(r.keys, key)
+	return nil
+}
+
 func TestGC(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now()
 
-	db, err := newDB(t.TempDir() + "/db")
-	if err != nil {
+	idx := newChunkIndex()
+	hlsSess := newHLSSessions()
+
+	sid1 := uuid.New().String()
+	sid2 := uuid.New().String()
+	hlsSess.replaceEntry(sid1, sessionData{StreamID: "keep"}, now)
+	hlsSess.replaceEntry(sid2, sessionData{StreamID: "old"}, now.Add(-48*time.Hour))
+
+	if err := idx.RecordChunk(ctx, "ts", "one", 10, now.Add(-48*time.Hour)); err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
-
-	rec := newRecorder(db)
-	dcs := newDiskChunkStore(rec, t.TempDir(), "/lol")
-
-	// write some shit
-
-	for _, upd := range []time.Time{now, now.Add(-48 * time.Hour)} {
-		if _, err := db.ExecContext(ctx,
-			`insert into sessions (id, data, updated_at) values ($1, '{}', $2)`,
-			uuid.New().String(), upd.UTC()); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	for _, dat := range []string{"one", "two"} {
-		fs, err := dcs.FetcherStore("ts")
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := fs.WriteChunk(ctx, dat, 10, bytes.NewReader([]byte(dat))); err != nil {
-			t.Fatal(err)
-		}
-
-	}
-	if _, err := db.ExecContext(ctx,
-		`update chunks set fetched_at = $1 where stream_id = 'ts' and sequence = 1`,
-		now.Add(-48*time.Hour).UTC()); err != nil {
+	if err := idx.RecordChunk(ctx, "ts", "two", 10, now); err != nil {
 		t.Fatal(err)
 	}
 
-	gc := newGarbageCollector(logrus.New(), db, dcs)
+	del := &recordingDeleter{}
+	gc := newGarbageCollector(logrus.New(), idx, del, hlsSess)
 
 	if err := gc.collect(); err != nil {
 		t.Fatal(err)
 	}
 
-	var c1 int
-
-	if err := db.QueryRowContext(ctx, `select count(*) from chunks`).Scan(&c1); err != nil {
+	cs, err := idx.Chunks(ctx, "ts", 1, 10)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if c1 != 1 {
-		t.Error("post GC should be one chunk")
+	if len(cs) != 1 || cs[0].ChunkID != "two" {
+		t.Errorf("post GC want chunk two only, got %#v", cs)
 	}
 
-	// TODO - why does two scans hang?
-
-	var c2 int
-
-	if err := db.QueryRowContext(ctx, `select count(*) from sessions`).Scan(&c2); err != nil {
-		t.Fatal(err)
+	if len(del.keys) != 1 {
+		t.Errorf("want 1 object delete, got %d %v", len(del.keys), del.keys)
 	}
 
-	if c2 != 1 {
-		t.Error("post GC should be one session")
+	sd1 := hlsSess.Get(ctx, sid1)
+	if sd1.StreamID != "keep" {
+		t.Error("fresh session should survive GC")
+	}
+	sd2 := hlsSess.Get(ctx, sid2)
+	if sd2.StreamID != "" {
+		t.Error("stale session should be pruned")
 	}
 }

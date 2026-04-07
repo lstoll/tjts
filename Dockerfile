@@ -18,10 +18,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 
 RUN useradd --uid 1000 --home-dir /tmp --shell /sbin/nologin --no-create-home app
 
-RUN apt-get update && \
-    apt-get upgrade -y && \
-    apt-get install -y sqlite3 curl iputils-ping
-
 COPY --from=build /go/bin/tjts /usr/bin/tjts
+
+USER app
 
 ENTRYPOINT ["/usr/bin/tjts"]
