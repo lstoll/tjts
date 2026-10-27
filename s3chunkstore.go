@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -19,6 +20,7 @@ type s3ChunkStore struct {
 	bucket     string
 	presignTTL time.Duration
 	idx        *chunkIndex
+	writeMu    sync.Mutex // serialize duplicate detection, upload and index publication
 }
 
 func newS3ChunkStore(client *s3.Client, bucket string, presignTTL time.Duration, idx *chunkIndex) *s3ChunkStore {
@@ -52,20 +54,19 @@ func (s *s3ChunkStore) LoadStream(ctx context.Context, streamID string) error {
 			return fmt.Errorf("list %s: %w", streamID, err)
 		}
 		for _, obj := range out.Contents {
-			if obj.Key == nil || obj.LastModified == nil {
+			if obj.Key == nil {
 				continue
 			}
-			_, kt, dur, chunkID, err := decodeObjectKey(*obj.Key)
-			if err != nil {
-				continue
+			sid, kt, dur, chunkID, err := decodeObjectKey(*obj.Key)
+			if err != nil || sid != streamID {
+				return fmt.Errorf("invalid chunk object %q in stream %s: %v", *obj.Key, streamID, err)
 			}
-			lm := *obj.LastModified
 			rows = append(rows, row{
 				keyTime: kt,
 				rc: recordedChunk{
 					ChunkID:   chunkID,
 					Duration:  dur,
-					FetchedAt: lm.UTC(),
+					FetchedAt: kt,
 					ObjectKey: *obj.Key,
 				},
 			})
@@ -133,20 +134,35 @@ type stationChunkStore struct {
 }
 
 func (s *stationChunkStore) WriteChunk(ctx context.Context, chunkName string, chunkDuration float64, r io.Reader) error {
+	s.parent.writeMu.Lock()
+	defer s.parent.writeMu.Unlock()
+	if !validChunkDuration(chunkDuration) || chunkName == "" {
+		return fmt.Errorf("invalid chunk metadata")
+	}
 	if s.parent.idx.HasLogical(s.streamID, chunkName) {
 		return nil
 	}
 	seq := s.parent.idx.NextSequence(s.streamID)
 	ts := time.Now().UTC()
 	key := encodeObjectKey(s.streamID, ts, chunkDuration, chunkName)
-	body, err := io.ReadAll(r)
+	body, err := readSegment(r)
 	if err != nil {
 		return fmt.Errorf("read chunk body: %w", err)
 	}
+	_, info, err := extractAAC(body)
+	if err != nil {
+		return fmt.Errorf("validate audio segment: %w", err)
+	}
+	audioPID.WithLabelValues(s.streamID).Set(float64(info.pid))
+	contentType := "audio/aac"
+	if info.format == "mpegts" {
+		contentType = "video/mp2t"
+	}
 	_, err = s.parent.client.PutObject(ctx, &s3.PutObjectInput{
-		Bucket: aws.String(s.parent.bucket),
-		Key:    aws.String(key),
-		Body:   bytes.NewReader(body),
+		Bucket:      aws.String(s.parent.bucket),
+		Key:         aws.String(key),
+		Body:        bytes.NewReader(body),
+		ContentType: aws.String(contentType),
 	})
 	if err != nil {
 		return fmt.Errorf("put %s: %w", key, err)

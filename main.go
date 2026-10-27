@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"syscall"
 	"time"
 
 	_ "time/tzdata"
@@ -61,7 +62,7 @@ func main() {
 
 	for _, s := range cfg.Streams {
 		if err := store.LoadStream(ctx, s.ID); err != nil {
-			l.WithError(err).Warnf("loading stream index for %s", s.ID)
+			l.WithError(err).Fatalf("loading stream index for %s", s.ID)
 		}
 	}
 
@@ -72,6 +73,7 @@ func main() {
 	idxPage := newIndex(l.WithField("component", "index"), cfg.Streams)
 
 	gc := newGarbageCollector(l.WithField("component", "gc"), idx, store, hlsSess)
+	gc.maxAge = cfg.MaxOffsetTime
 
 	mux := http.NewServeMux()
 
@@ -87,13 +89,15 @@ func main() {
 	})
 
 	srv := &http.Server{
-		Addr:    *listen,
-		Handler: mux,
+		Addr:              *listen,
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
 
 	var g run.Group
 
-	g.Add(run.SignalHandler(ctx, os.Interrupt))
+	g.Add(run.SignalHandler(ctx, os.Interrupt, syscall.SIGTERM))
 
 	g.Add(gc.Run, gc.Interrupt)
 
@@ -119,8 +123,10 @@ func main() {
 		pm.Handle("/metrics", ph)
 
 		metricsSrv := &http.Server{
-			Addr:    *metricsListen,
-			Handler: pm,
+			Addr:              *metricsListen,
+			Handler:           pm,
+			ReadHeaderTimeout: 10 * time.Second,
+			IdleTimeout:       60 * time.Second,
 		}
 
 		prometheus.MustRegister(newMetricsCollector(idx))

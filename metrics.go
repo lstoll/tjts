@@ -9,6 +9,7 @@ import (
 )
 
 var (
+	audioPID                = promauto.NewGaugeVec(prometheus.GaugeOpts{Name: "tjts_audio_pid", Help: "Detected AAC PID for the latest validated segment; -1 for packed ADTS audio"}, []string{"streamid"})
 	serveEndpointErrorCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "tjts_serving_endpoint_errors",
 		Help: "Count of errors serving content to users",

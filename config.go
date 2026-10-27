@@ -2,7 +2,9 @@ package main
 
 import (
 	"fmt"
+	"net/url"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -46,7 +48,7 @@ func loadAndValdiateConfig(path string) (configFile, error) {
 
 	cf := configFile{}
 
-	if err := yaml.Unmarshal(fb, &cf); err != nil {
+	if err := yaml.UnmarshalStrict(fb, &cf); err != nil {
 		return configFile{}, fmt.Errorf("unmarshaling %s: %v", path, err)
 	}
 
@@ -61,7 +63,18 @@ func loadAndValdiateConfig(path string) (configFile, error) {
 	if len(cf.Streams) == 0 {
 		ems = append(ems, "must specify at least one stream")
 	}
+	seen := make(map[string]bool)
 	for _, s := range cf.Streams {
+		if !regexp.MustCompile(`^[a-z][a-z0-9_]*$`).MatchString(s.ID) || seen[s.ID] {
+			ems = append(ems, "stream ids must be unique lowercase identifiers")
+		}
+		seen[s.ID] = true
+		if !validHTTPURL(s.URL) {
+			ems = append(ems, fmt.Sprintf("%s: invalid HTTP stream URL", s.ID))
+		}
+		if _, err := time.LoadLocation(s.BaseTimezone); err != nil {
+			ems = append(ems, fmt.Sprintf("%s: invalid base timezone", s.ID))
+		}
 		if s.ID == "" {
 			ems = append(ems, "streams must have id")
 		}
@@ -83,9 +96,26 @@ func loadAndValdiateConfig(path string) (configFile, error) {
 		cf.S3.PresignTTL = defaultPresignTTL
 	}
 
+	if cf.MaxOffsetTime < 0 {
+		ems = append(ems, "maxOffset must be positive")
+	}
+	if cf.S3.PresignTTL < time.Second || cf.S3.PresignTTL > 7*24*time.Hour {
+		ems = append(ems, "s3.presignTTL must be between 1s and 168h")
+	}
+	if (cf.S3.AccessKey == "") != (cf.S3.SecretKey == "") {
+		ems = append(ems, "s3.accessKey and s3.secretKey must be supplied together")
+	}
+	if cf.S3.Endpoint != "" && !validHTTPURL(cf.S3.Endpoint) {
+		ems = append(ems, "s3.endpoint must be an HTTP URL")
+	}
 	if len(ems) > 0 {
 		return cf, fmt.Errorf("validation error(s) validating config: %s", strings.Join(ems, ", "))
 	}
 
 	return cf, nil
+}
+
+func validHTTPURL(raw string) bool {
+	u, err := url.Parse(raw)
+	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != "" && u.User == nil && u.Fragment == ""
 }

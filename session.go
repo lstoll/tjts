@@ -10,6 +10,7 @@ import (
 // Process restart or pod loss clears all sessions; clients re-hit ?stream=&tz= like a new ICY connection.
 type sessionData struct {
 	LatestSequence int
+	TargetDuration int
 	IntroducedAt   time.Time
 	StreamID       string
 	Timezone       string

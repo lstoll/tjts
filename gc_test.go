@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -63,5 +64,50 @@ func TestGC(t *testing.T) {
 	sd2 := hlsSess.Get(ctx, sid2)
 	if sd2.StreamID != "" {
 		t.Error("stale session should be pruned")
+	}
+}
+
+func TestGCDrainsBacklogAndHonorsRetention(t *testing.T) {
+	ctx := context.Background()
+	idx := newChunkIndex()
+	now := time.Now()
+	for n := range expiredChunksMax + 3 {
+		if err := idx.RecordChunk(ctx, "radio", fmt.Sprintf("%d", n), 10, now.Add(-3*time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := idx.RecordChunk(ctx, "radio", "keep", 10, now); err != nil {
+		t.Fatal(err)
+	}
+	del := &recordingDeleter{}
+	gc := newGarbageCollector(logrus.New(), idx, del, newHLSSessions())
+	gc.maxAge = time.Hour
+	if err := gc.collect(); err != nil {
+		t.Fatal(err)
+	}
+	if len(del.keys) != expiredChunksMax+3 {
+		t.Fatalf("backlog: deleted %d", len(del.keys))
+	}
+	chunks, _ := idx.Chunks(ctx, "radio", 1, 5000)
+	if len(chunks) != 1 || chunks[0].ChunkID != "keep" {
+		t.Fatalf("remaining chunks: %#v", chunks)
+	}
+	idx.Remove(chunks[0])
+	next := idx.NextSequence("radio")
+	if next != expiredChunksMax+5 {
+		t.Fatalf("sequence reused after GC: %d", next)
+	}
+	// Interrupt is safe both before Run and more than once.
+	gc.Interrupt(nil)
+	gc.Interrupt(nil)
+	done := make(chan error, 1)
+	go func() { done <- gc.Run() }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("GC shutdown blocked")
 	}
 }

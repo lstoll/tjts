@@ -24,14 +24,16 @@ type chunkIndex struct {
 	mu sync.RWMutex
 	// stream id -> ordered chunks (by sequence ascending)
 	streams map[string][]recordedChunk
-	// stream id -> set of logical chunk ids (URL basename) already stored
-	logical map[string]map[string]struct{}
+	// stream id -> set of logical chunk ids already stored
+	logical      map[string]map[string]struct{}
+	highSequence map[string]int
 }
 
 func newChunkIndex() *chunkIndex {
 	return &chunkIndex{
-		streams: make(map[string][]recordedChunk),
-		logical: make(map[string]map[string]struct{}),
+		streams:      make(map[string][]recordedChunk),
+		logical:      make(map[string]map[string]struct{}),
+		highSequence: make(map[string]int),
 	}
 }
 
@@ -52,6 +54,9 @@ func (c *chunkIndex) ReplaceStream(streamID string, chunks []recordedChunk) {
 	seen := make(map[string]struct{})
 	for _, ch := range cp {
 		seen[ch.ChunkID] = struct{}{}
+		if ch.Sequence > c.highSequence[streamID] {
+			c.highSequence[streamID] = ch.Sequence
+		}
 	}
 	c.logical[streamID] = seen
 }
@@ -85,11 +90,7 @@ func (c *chunkIndex) GetChunk(streamID, logicalChunkID string) (recordedChunk, b
 func (c *chunkIndex) NextSequence(streamID string) int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	ch := c.streams[streamID]
-	if len(ch) == 0 {
-		return 1
-	}
-	return ch[len(ch)-1].Sequence + 1
+	return c.highSequence[streamID] + 1
 }
 
 // Append adds a chunk after a successful S3 upload.
@@ -98,6 +99,9 @@ func (c *chunkIndex) Append(streamID string, rc recordedChunk) {
 	defer c.mu.Unlock()
 	c.ensureStream(streamID)
 	c.streams[streamID] = append(c.streams[streamID], rc)
+	if rc.Sequence > c.highSequence[streamID] {
+		c.highSequence[streamID] = rc.Sequence
+	}
 	c.logical[streamID][rc.ChunkID] = struct{}{}
 }
 
@@ -127,6 +131,9 @@ func (c *chunkIndex) SequenceFor(_ context.Context, streamID string, before time
 func (c *chunkIndex) Chunks(_ context.Context, streamID string, startSequence int, num int) ([]recordedChunk, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
+	if num <= 0 {
+		return nil, nil
+	}
 	ch := c.streams[streamID]
 	var out []recordedChunk
 	for _, rc := range ch {
@@ -150,10 +157,8 @@ func (c *chunkIndex) RecordChunk(_ context.Context, streamID, chunkID string, du
 	defer c.mu.Unlock()
 	c.ensureStream(streamID)
 	ch := c.streams[streamID]
-	seq := 1
-	if len(ch) > 0 {
-		seq = ch[len(ch)-1].Sequence + 1
-	}
+	seq := c.highSequence[streamID] + 1
+	c.highSequence[streamID] = seq
 	key := encodeObjectKey(streamID, fetchedAt.UTC(), duration, chunkID)
 	rc := recordedChunk{
 		Sequence:  seq,

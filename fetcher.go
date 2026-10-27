@@ -1,12 +1,15 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
-	"path/filepath"
+	"path"
 	"time"
 
 	"github.com/etherlabsio/go-m3u8/m3u8"
@@ -25,8 +28,8 @@ type fetcher struct {
 	url      *url.URL
 	streamID string
 
-	stopC  chan struct{}
-	ticker *time.Ticker
+	ctx    context.Context
+	cancel context.CancelFunc
 }
 
 func newFetcher(l logrus.FieldLogger, cs *stationChunkStore, streamID, streamURL string) (*fetcher, error) {
@@ -39,13 +42,14 @@ func newFetcher(l logrus.FieldLogger, cs *stationChunkStore, streamID, streamURL
 		return nil, fmt.Errorf("parsing %s: %v", streamURL, err)
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
 	return &fetcher{
 		l:        l,
 		hc:       hc,
 		url:      u,
 		streamID: streamID,
 		cs:       cs,
-		stopC:    make(chan struct{}),
+		ctx:      ctx, cancel: cancel,
 	}, nil
 }
 
@@ -54,11 +58,12 @@ func (f *fetcher) Run() error {
 
 	// set the initial ticker to fire immeditely. We'll reset it once inspecting
 	// the playlist we got
-	f.ticker = time.NewTicker(1 * time.Nanosecond)
+	ticker := time.NewTicker(time.Nanosecond)
+	defer ticker.Stop()
 
 	for {
 		select {
-		case <-f.ticker.C:
+		case <-ticker.C:
 			f.l.Debug("tick")
 
 			// we don't hard error in here, assume we will retry/recover
@@ -66,13 +71,14 @@ func (f *fetcher) Run() error {
 			if err != nil {
 				fetchErrorCount.WithLabelValues(f.streamID).Inc()
 				f.l.WithError(err).Warn("getting playlist")
+				ticker.Reset(5 * time.Second)
 				continue
 			}
 
 			var td time.Duration
 
-			for _, s := range pl.Segments() {
-				if err := f.downloadSegment(plurl, s); err != nil {
+			for n, s := range pl.Segments() {
+				if err := f.downloadSegment(plurl, s, pl.Sequence+n); err != nil {
 					fetchErrorCount.WithLabelValues(f.streamID).Inc()
 					f.l.WithError(err).Warn("downloading segment")
 					continue
@@ -90,19 +96,30 @@ func (f *fetcher) Run() error {
 				rsd = 5 * time.Second
 			}
 			f.l.Debugf("Resetting ticker to interval %s", rsd)
-			f.ticker.Reset(rsd)
-		case <-f.stopC:
+			ticker.Reset(rsd)
+		case <-f.ctx.Done():
 			return nil
 		}
 	}
 }
 
 func (f *fetcher) Interrupt(_ error) {
-	f.stopC <- struct{}{}
+	f.cancel()
 }
 
 func (f *fetcher) getPlaylist(u *url.URL) (*m3u8.Playlist, *url.URL, error) {
-	r, err := f.hc.Get(u.String())
+	return f.getPlaylistDepth(u, 0)
+}
+
+func (f *fetcher) getPlaylistDepth(u *url.URL, depth int) (*m3u8.Playlist, *url.URL, error) {
+	if depth >= 5 {
+		return nil, nil, errors.New("too many nested master playlists")
+	}
+	req, err := http.NewRequestWithContext(f.ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	r, err := f.hc.Do(req)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -111,7 +128,14 @@ func (f *fetcher) getPlaylist(u *url.URL) (*m3u8.Playlist, *url.URL, error) {
 		return nil, nil, fmt.Errorf("wanted 200 from %s, got: %d", u.String(), r.StatusCode)
 	}
 
-	pl, err := m3u8.Read(r.Body)
+	body, err := io.ReadAll(io.LimitReader(r.Body, (1<<20)+1))
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(body) > 1<<20 {
+		return nil, nil, errors.New("playlist exceeds 1 MiB")
+	}
+	pl, err := m3u8.Read(bytes.NewReader(body))
 	if err != nil {
 		return nil, nil, fmt.Errorf("reading playlist from %s: %v", u.String(), err)
 	}
@@ -135,13 +159,34 @@ func (f *fetcher) getPlaylist(u *url.URL) (*m3u8.Playlist, *url.URL, error) {
 		if err != nil {
 			return nil, nil, fmt.Errorf("resolving playlist url %s: %w", best.URI, err)
 		}
-		return f.getPlaylist(u)
+		return f.getPlaylistDepth(u, depth+1)
 	}
 
+	for _, item := range pl.Items {
+		switch item := item.(type) {
+		case *m3u8.MapItem:
+			return nil, nil, fmt.Errorf("HLS initialization maps are unsupported")
+		case *m3u8.KeyItem:
+			if item.Encryptable == nil || item.Encryptable.Method != "NONE" {
+				return nil, nil, fmt.Errorf("encrypted HLS is unsupported")
+			}
+		case *m3u8.DiscontinuityItem:
+			return nil, nil, fmt.Errorf("HLS discontinuities are unsupported")
+		}
+	}
+	if pl.IFramesOnly {
+		return nil, nil, fmt.Errorf("i-frame HLS playlists are unsupported")
+	}
 	return pl, r.Request.URL, nil
 }
 
-func (f *fetcher) downloadSegment(playlistURL *url.URL, s *m3u8.SegmentItem) error {
+func (f *fetcher) downloadSegment(playlistURL *url.URL, s *m3u8.SegmentItem, sequence int) error {
+	if s.ByteRange != nil {
+		return fmt.Errorf("byte-range HLS segments are unsupported")
+	}
+	if !validChunkDuration(s.Duration) {
+		return fmt.Errorf("invalid segment duration %v", s.Duration)
+	}
 	segmentURL, err := resolveSegmentURL(playlistURL, s.Segment)
 	if err != nil {
 		return err
@@ -152,13 +197,21 @@ func (f *fetcher) downloadSegment(playlistURL *url.URL, s *m3u8.SegmentItem) err
 		return err
 	}
 
-	if f.cs.ChunkExists(context.TODO(), cn) {
+	// The basename alone is not an identity: different paths and media
+	// sequences can reuse it. Ignore rotating authentication query parameters.
+	identity := segmentURL.Host + segmentURL.EscapedPath()
+	cn = fmt.Sprintf("%d-%x%s", sequence, sha256.Sum256([]byte(identity)), path.Ext(cn))
+	if f.cs.ChunkExists(f.ctx, cn) {
 		f.l.Debugf("chunk %s exists, skipping", cn)
 		return nil
 	}
 
 	f.l.Debugf("downloading chunk %s from %s", cn, segmentURL.String())
-	r, err := f.hc.Get(segmentURL.String())
+	req, err := http.NewRequestWithContext(f.ctx, http.MethodGet, segmentURL.String(), nil)
+	if err != nil {
+		return err
+	}
+	r, err := f.hc.Do(req)
 	if err != nil {
 		return err
 	}
@@ -167,7 +220,7 @@ func (f *fetcher) downloadSegment(playlistURL *url.URL, s *m3u8.SegmentItem) err
 		return fmt.Errorf("wanted 200 from %s, got: %d", segmentURL.String(), r.StatusCode)
 	}
 
-	if err := f.cs.WriteChunk(context.TODO(), cn, s.Duration, r.Body); err != nil {
+	if err := f.cs.WriteChunk(f.ctx, cn, s.Duration, r.Body); err != nil {
 		return fmt.Errorf("writing chunk: %v", err)
 	}
 
@@ -179,7 +232,11 @@ func resolveSegmentURL(playlistURL *url.URL, segment string) (*url.URL, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parsing segment %s as URL: %w", segment, err)
 	}
-	return playlistURL.ResolveReference(segmentURL), nil
+	resolved := playlistURL.ResolveReference(segmentURL)
+	if !validHTTPURL(resolved.String()) {
+		return nil, fmt.Errorf("invalid HTTP segment URL")
+	}
+	return resolved, nil
 }
 
 func chunkNameFromURL(u string) (string, error) {
@@ -187,5 +244,9 @@ func chunkNameFromURL(u string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("parsing %s: %v", u, err)
 	}
-	return filepath.Base(pu.Path), nil
+	name := path.Base(pu.Path)
+	if name == "." || name == "/" || name == "" {
+		return "", fmt.Errorf("segment URL has no filename")
+	}
+	return name, nil
 }

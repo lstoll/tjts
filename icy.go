@@ -1,16 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"net/http"
-	"path/filepath"
 	"time"
 
-	"github.com/Comcast/gots/v2/packet"
-	"github.com/Comcast/gots/v2/pes"
-	"github.com/Comcast/gots/v2/psi"
 	"github.com/sirupsen/logrus"
 )
 
@@ -82,7 +79,7 @@ func (i *icyServer) ServeIcecast(w http.ResponseWriter, r *http.Request) {
 
 	l.Debugf("offset %s", offset.String())
 
-	s, err := i.indexer.SequenceFor(ctx, streamID, now.Add(-offset))
+	s, err := i.indexer.SequenceFor(ctx, streamID, now.Add(-max(offset, streamBuffer)))
 	if err != nil {
 		serveEndpointErrorCount.WithLabelValues("icy", streamID).Inc()
 		l.WithError(err).Errorf("getting sequence for %s", streamID)
@@ -95,8 +92,12 @@ func (i *icyServer) ServeIcecast(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Accel-Buffering", "no")
 	w.Header().Set("Content-Type", "audio/aacp")
 	w.Header().Set("icy-name", stationName)
+	w.Header().Set("Cache-Control", "no-store")
+	if r.Method == http.MethodHead {
+		return
+	}
 
-	// note - from this point on http.Error is useless, we've already served headers and stuff
+	// Headers are committed only after the first chunk has been prepared.
 
 	// track when we start the streaming, and how much time we've streamed to
 	// the user
@@ -104,6 +105,7 @@ func (i *icyServer) ServeIcecast(w http.ResponseWriter, r *http.Request) {
 	servedTime := time.Duration(0)
 
 	nextRun := time.NewTimer(0)
+	defer nextRun.Stop()
 
 	for {
 		select {
@@ -115,19 +117,39 @@ func (i *icyServer) ServeIcecast(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				serveEndpointErrorCount.WithLabelValues("icy", streamID).Inc()
 				l.WithError(err).Errorf("getting 1 chunk from %d", s)
+				if servedTime == 0 {
+					http.Error(w, "Unable to find audio chunk", http.StatusInternalServerError)
+				}
 				return
 			}
 			if len(rcs) < 1 {
 				l.Warnf("got no chunks")
-				return
+				if servedTime == 0 {
+					http.Error(w, "No audio chunks available", http.StatusServiceUnavailable)
+					return
+				}
+				nextRun.Reset(time.Second)
+				continue
 			}
 			c := rcs[0]
 
 			l = l.WithField("seq", c.Sequence).WithField("cid", c.ChunkID)
 
-			rawAAC, err := i.streamChunkBody(ctx, w, l, streamID, c)
+			// Prepare a complete segment before committing a successful audio response.
+			var body bytes.Buffer
+			rawAAC, err := i.streamChunkBody(ctx, &body, l, streamID, c)
 			if err != nil {
+				if servedTime == 0 {
+					http.Error(w, "Unable to read audio chunk", http.StatusBadGateway)
+				}
 				return
+			}
+			if _, err := body.WriteTo(w); err != nil {
+				l.WithError(err).Debug("writing audio to consumer")
+				return
+			}
+			if f, ok := w.(http.Flusher); ok {
+				f.Flush()
 			}
 
 			// We want to make sure the user has been served enough data for the
@@ -151,84 +173,33 @@ func (i *icyServer) ServeIcecast(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (i *icyServer) streamChunkBody(ctx context.Context, w http.ResponseWriter, l logrus.FieldLogger, streamID string, c recordedChunk) (rawAAC bool, err error) {
+func (i *icyServer) streamChunkBody(ctx context.Context, w io.Writer, l logrus.FieldLogger, streamID string, c recordedChunk) (rawAAC bool, err error) {
+	defer func() {
+		if err != nil {
+			serveEndpointErrorCount.WithLabelValues("icy", streamID).Inc()
+			l.WithError(err).Error("reading audio chunk")
+		}
+	}()
 	cr, err := i.store.GetObjectReader(ctx, c)
 	if err != nil {
-		serveEndpointErrorCount.WithLabelValues("icy", streamID).Inc()
-		l.WithError(err).Error("getting chunk reader")
 		return false, err
 	}
 	defer cr.Close()
 
-	/* more gross shit in some gross code
-	 * clean this up a bit to be better about content type management, and
-	 * structure in to not-big-if-else
-	 */
-	if filepath.Ext(c.ChunkID) == ".aac" {
-		rawAAC = true
-		if _, err := io.Copy(w, cr); err != nil {
-			serveEndpointErrorCount.WithLabelValues("icy", streamID).Inc()
-			l.WithError(err).Error("writing aac chunk to consumer")
-			return true, err
-		}
-		return true, nil
-	}
-
-	/* assume it's a ts stream, like it used to be */
-
-	pat, err := psi.ReadPAT(cr)
+	body, err := readSegment(cr)
 	if err != nil {
-		serveEndpointErrorCount.WithLabelValues("icy", streamID).Inc()
-		l.WithError(err).Error("getting pat")
 		return false, err
 	}
-	_ = pat
-
-	const audioPid = 256
-
-	var pkt packet.Packet
-	for read, err := cr.Read(pkt[:]); read > 0 && err == nil; read, err = cr.Read(pkt[:]) {
-		if packet.Pid(&pkt) != audioPid {
-			continue
-		}
-		if !pkt.HasPayload() {
-			continue
-		}
-
-		if packet.PayloadUnitStartIndicator(&pkt) {
-			ph, err := packet.PESHeader(&pkt)
-			if err != nil {
-				serveEndpointErrorCount.WithLabelValues("icy", streamID).Inc()
-				l.WithError(err).Errorf("getting packet header")
-				return false, err
-			}
-			pes, err := pes.NewPESHeader(ph)
-			if err != nil {
-				serveEndpointErrorCount.WithLabelValues("icy", streamID).Inc()
-				l.WithError(err).Errorf("creating pes header")
-				return false, err
-			}
-			if _, err := w.Write(pes.Data()); err != nil {
-				serveEndpointErrorCount.WithLabelValues("icy", streamID).Inc()
-				l.WithError(err).Error("writing packet")
-				return false, err
-			}
-		} else {
-			pl, err := pkt.Payload()
-			if err != nil {
-				serveEndpointErrorCount.WithLabelValues("icy", streamID).Inc()
-				l.WithError(err).Error("getting packet payload")
-				return false, err
-			}
-
-			if _, err := w.Write(pl); err != nil {
-				serveEndpointErrorCount.WithLabelValues("icy", streamID).Inc()
-				l.WithError(err).Error("writing packet")
-				return false, err
-			}
-		}
+	audio, info, err := extractAAC(body)
+	if err != nil {
+		return false, err
 	}
-	return false, nil
+	l.WithField("format", info.format).WithField("audio_pid", info.pid).Debug("detected audio format")
+	n, err := w.Write(audio)
+	if err == nil && n != len(audio) {
+		err = io.ErrShortWrite
+	}
+	return info.format == "adts", err
 }
 
 var nowFn = time.Now

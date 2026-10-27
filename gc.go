@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -27,65 +28,63 @@ type garbageCollector struct {
 	obj     objectDeleter
 	hlsSess *hlsSessions
 
-	ticker *time.Ticker
-	stopC  chan struct{}
+	ctx    context.Context
+	cancel context.CancelFunc
+	maxAge time.Duration
 }
 
 func newGarbageCollector(l logrus.FieldLogger, idx *chunkIndex, obj objectDeleter, hlsSess *hlsSessions) *garbageCollector {
+	ctx, cancel := context.WithCancel(context.Background())
 	return &garbageCollector{
 		l:       l,
 		idx:     idx,
 		obj:     obj,
 		hlsSess: hlsSess,
-		stopC:   make(chan struct{}),
+		ctx:     ctx, cancel: cancel, maxAge: chunkMaxAge,
 	}
 }
 
 func (g *garbageCollector) Run() error {
-	if err := g.collect(); err != nil {
-		return err
-	}
-
-	g.ticker = time.NewTicker(gcInterval)
-
+	ticker := time.NewTicker(gcInterval)
+	defer ticker.Stop()
 	for {
+		if err := g.collect(); err != nil && g.ctx.Err() == nil {
+			g.l.WithError(err).Error("garbage collection failed; will retry")
+		}
 		select {
-		case <-g.ticker.C:
-			if err := g.collect(); err != nil {
-				return fmt.Errorf("running gc: %v", err)
-			}
-		case <-g.stopC:
+		case <-ticker.C:
+		case <-g.ctx.Done():
 			return nil
 		}
 	}
 }
 
-func (g *garbageCollector) Interrupt(_ error) {
-	g.stopC <- struct{}{}
-}
+func (g *garbageCollector) Interrupt(_ error) { g.cancel() }
 
 func (g *garbageCollector) collect() error {
-	ctx := context.Background()
-
-	n := g.hlsSess.pruneSessions(time.Now().Add(-sessMaxAge).UTC())
-	if n > 0 {
-		g.l.Debugf("gc'd %d hls sessions", n)
-	}
-
-	ecs := g.idx.ExpiredChunks(time.Now().Add(-chunkMaxAge).UTC(), expiredChunksMax)
-	if len(ecs) < 1 {
-		return nil
-	}
-
-	g.l.Debugf("found %d expired chunks (max %d)", len(ecs), expiredChunksMax)
-
-	for _, rc := range ecs {
-		if err := g.obj.DeleteObject(ctx, rc.ObjectKey); err != nil {
-			return fmt.Errorf("deleting object %s: %v", rc.ObjectKey, err)
+	ctx, cancel := context.WithTimeout(g.ctx, 10*time.Minute)
+	defer cancel()
+	now := time.Now()
+	g.hlsSess.pruneSessions(now.Add(-sessMaxAge).UTC())
+	// Drain the backlog in bounded batches, including after a long outage.
+	for {
+		ecs := g.idx.ExpiredChunks(now.Add(-g.maxAge).UTC(), expiredChunksMax)
+		if len(ecs) == 0 {
+			return nil
 		}
-		g.idx.Remove(rc)
-		g.l.Debugf("deleted chunk %s seq %d", rc.ObjectKey, rc.Sequence)
+		var errs []error
+		for _, rc := range ecs {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			if err := g.obj.DeleteObject(ctx, rc.ObjectKey); err != nil {
+				errs = append(errs, fmt.Errorf("delete %s: %w", rc.ObjectKey, err))
+				continue
+			}
+			g.idx.Remove(rc)
+		}
+		if len(errs) > 0 {
+			return errors.Join(errs...)
+		}
 	}
-
-	return nil
 }

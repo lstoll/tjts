@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/base64"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -31,22 +32,28 @@ func decodeObjectKey(key string) (streamID string, keyTime time.Time, durationSe
 		return "", time.Time{}, 0, "", fmt.Errorf("invalid key suffix in %q", key)
 	}
 	nano, err := strconv.ParseInt(parts[0], 10, 64)
-	if err != nil {
-		return "", time.Time{}, 0, "", fmt.Errorf("timestamp in %q: %w", key, err)
+	if err != nil || nano <= 0 {
+		return "", time.Time{}, 0, "", fmt.Errorf("invalid timestamp in %q", key)
 	}
 	if len(parts[1]) < 2 || parts[1][0] != 'd' {
 		return "", time.Time{}, 0, "", fmt.Errorf("duration marker in %q", key)
 	}
 	durMs, err := strconv.Atoi(parts[1][1:])
-	if err != nil {
-		return "", time.Time{}, 0, "", fmt.Errorf("duration in %q: %w", key, err)
+	if err != nil || durMs <= 0 || durMs > int(maxSegmentDuration/time.Millisecond) {
+		return "", time.Time{}, 0, "", fmt.Errorf("invalid duration in %q", key)
 	}
 	b, err := base64.RawURLEncoding.DecodeString(parts[2])
-	if err != nil {
-		return "", time.Time{}, 0, "", fmt.Errorf("chunk id encoding in %q: %w", key, err)
+	if err != nil || len(b) == 0 {
+		return "", time.Time{}, 0, "", fmt.Errorf("invalid chunk id encoding in %q", key)
 	}
 	chunkID = string(b)
 	durationSec = float64(durMs) / 1000.0
 	keyTime = time.Unix(0, nano).UTC()
 	return streamID, keyTime, durationSec, chunkID, nil
+}
+
+const maxSegmentDuration = 5 * time.Minute
+
+func validChunkDuration(seconds float64) bool {
+	return !math.IsNaN(seconds) && !math.IsInf(seconds, 0) && seconds >= 0.001 && seconds <= maxSegmentDuration.Seconds()
 }
