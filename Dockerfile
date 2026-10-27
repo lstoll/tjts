@@ -1,6 +1,6 @@
-# syntax=docker/dockerfile:1.3
+# syntax=docker/dockerfile:1
 
-FROM golang:1-trixie AS build
+FROM golang:1.27.3-trixie AS build
 
 RUN mkdir -p /src/tjts
 WORKDIR /src/tjts
