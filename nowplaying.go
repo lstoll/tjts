@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"sort"
 	"strconv"
 	"sync"
@@ -284,7 +285,7 @@ func (r abcResponse) plays() []play {
 			Duration: it.Recording.Duration,
 			Artist:   it.Summary.Artist,
 			Title:    it.Summary.Title,
-			Links:    it.Summary.Links,
+			Links:    normalizeLinks(it.Summary.Links),
 		}
 		if p.Title == "" {
 			p.Title = it.Recording.Title
@@ -305,6 +306,29 @@ func (r abcResponse) plays() []play {
 			p.Artwork = artworkURL(it.Recording.Artwork)
 		}
 		out = append(out, p)
+	}
+	return out
+}
+
+// appleStorefront matches the country segment of an Apple Music URL path.
+var appleStorefront = regexp.MustCompile(`^/[a-z]{2}/`)
+
+// normalizeLinks drops the storefront ABC hard-codes into Apple Music links
+// (/au/). The web player shows a blank page when the link's storefront
+// doesn't match the viewer's account; without one, Apple redirects to the
+// viewer's own.
+func normalizeLinks(links map[string]string) map[string]string {
+	if len(links) == 0 {
+		return links
+	}
+	out := make(map[string]string, len(links))
+	for k, v := range links {
+		if u, err := url.Parse(v); err == nil && u.Host == "music.apple.com" && appleStorefront.MatchString(u.Path) {
+			u.Path = appleStorefront.ReplaceAllString(u.Path, "/")
+			u.RawPath = ""
+			v = u.String()
+		}
+		out[k] = v
 	}
 	return out
 }
@@ -442,6 +466,10 @@ func (f *playsFetcher) Load(ctx context.Context) {
 		playsErrorCount.WithLabelValues(f.streamID, "load").Inc()
 		f.l.WithError(err).Warn("loading stored plays; will backfill from API")
 		return
+	}
+	// Plays stored before link normalization still carry ABC's storefront.
+	for i := range ps {
+		ps[i].Links = normalizeLinks(ps[i].Links)
 	}
 	f.idx.Merge(f.streamID, ps)
 	f.idx.Prune(f.streamID, time.Now().Add(-f.retention))

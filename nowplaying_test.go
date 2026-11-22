@@ -127,7 +127,10 @@ func abcItem(i int, at time.Time) map[string]any {
 		"played_time": at.Format("2006-01-02T15:04:05+00:00"),
 		"summary": map[string]any{
 			"artist": fmt.Sprintf("Artist %d", i), "title": fmt.Sprintf("Song %d", i),
-			"links": map[string]string{"Spotify": "https://open.spotify.com/search/x"},
+			"links": map[string]string{
+				"Spotify": "https://open.spotify.com/search/x",
+				"Apple":   "https://music.apple.com/au/search?term=Artist%20Song",
+			},
 		},
 		"recording": map[string]any{
 			"title": fmt.Sprintf("Song %d", i), "duration": 200,
@@ -175,7 +178,8 @@ func TestABCClientPaging(t *testing.T) {
 	}
 	p := ps[5]
 	if p.ID != "p5" || !p.PlayedAt.Equal(t0.Add(20*time.Minute)) || p.Artist != "Artist 5" || p.Title != "Song 5" ||
-		p.Duration != 200 || p.Release != "Album" || p.Artwork != "https://example.com/340.jpg" || p.Links["Spotify"] == "" {
+		p.Duration != 200 || p.Release != "Album" || p.Artwork != "https://example.com/340.jpg" || p.Links["Spotify"] == "" ||
+		p.Links["Apple"] != "https://music.apple.com/search?term=Artist%20Song" {
 		t.Fatalf("bad parse: %+v", p)
 	}
 
@@ -299,5 +303,28 @@ func TestPlaysFetcherStartsAtRetention(t *testing.T) {
 	}
 	if !src.from.Equal(t0.Add(-25 * time.Hour)) {
 		t.Fatalf("empty index should backfill whole retention, from=%s", src.from)
+	}
+}
+
+func TestNormalizeLinks(t *testing.T) {
+	got := normalizeLinks(map[string]string{
+		"Apple":   "https://music.apple.com/au/search?term=BICEP%20%26%20SOARR%20Air",
+		"Album":   "https://music.apple.com/au/album/x/123",
+		"Spotify": "https://open.spotify.com/search/BICEP%20%26%20SOARR%20Air",
+		"Bare":    "https://music.apple.com/search?term=x",
+	})
+	want := map[string]string{
+		"Apple":   "https://music.apple.com/search?term=BICEP%20%26%20SOARR%20Air",
+		"Album":   "https://music.apple.com/album/x/123",
+		"Spotify": "https://open.spotify.com/search/BICEP%20%26%20SOARR%20Air",
+		"Bare":    "https://music.apple.com/search?term=x",
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Errorf("%s = %q, want %q", k, got[k], v)
+		}
+	}
+	if normalizeLinks(nil) != nil {
+		t.Error("nil links should stay nil")
 	}
 }
