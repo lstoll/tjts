@@ -199,6 +199,15 @@ func (pi *playIndex) Recent(streamID string, from, to time.Time, limit int) []pl
 	return out
 }
 
+// Upcoming returns up to limit plays that started after t, soonest first.
+func (pi *playIndex) Upcoming(streamID string, t time.Time, limit int) []play {
+	pi.mu.RLock()
+	defer pi.mu.RUnlock()
+	cur := pi.plays[streamID]
+	i := sort.Search(len(cur), func(i int) bool { return cur[i].PlayedAt.After(t) })
+	return append([]play(nil), cur[i:min(i+limit, len(cur))]...)
+}
+
 // abcClient reads ABC's play log.
 type abcClient struct {
 	http    *http.Client

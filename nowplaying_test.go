@@ -84,6 +84,16 @@ func TestPlayIndexMergePruneRecent(t *testing.T) {
 		t.Fatalf("recent limit = %+v", got)
 	}
 
+	if got := pi.Upcoming("s", t0.Add(3*time.Minute), 10); len(got) != 2 || got[0].ID != "c" || got[1].ID != "d" {
+		t.Fatalf("upcoming = %+v", got)
+	}
+	if got := pi.Upcoming("s", t0.Add(-time.Second), 1); len(got) != 1 || got[0].ID != "a" {
+		t.Fatalf("upcoming limit = %+v", got)
+	}
+	if got := pi.Upcoming("s", t0.Add(time.Hour), 10); len(got) != 0 {
+		t.Fatalf("upcoming past end = %+v", got)
+	}
+
 	if pi.Prune("s", t0) {
 		t.Fatal("prune at oldest removed something")
 	}

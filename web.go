@@ -61,7 +61,8 @@ func (i *index) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
 	}
 }
 
-const nowPlayingRecentMax = 50
+// nowPlayingListMax caps the earlier and upcoming lists.
+const nowPlayingListMax = 50
 
 // nowPlayingServer serves what a listener in a given timezone is hearing, and
 // what they heard before, on their shifted timeline.
@@ -82,6 +83,9 @@ type nowPlayingResponse struct {
 	Station string      `json:"station"`
 	Now     *heardPlay  `json:"now"`
 	Recent  []heardPlay `json:"recent"`
+	// Next is what the listener will hear: plays already broadcast live but
+	// still ahead on their shifted timeline. Empty for unshifted listeners.
+	Next []heardPlay `json:"next"`
 }
 
 func (n *nowPlayingServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -117,16 +121,19 @@ func (n *nowPlayingServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	listening := now.Add(-shift)
 	heard := func(p play) heardPlay { return heardPlay{play: p, HeardAt: p.PlayedAt.Add(shift)} }
 
-	resp := nowPlayingResponse{Station: stream.Name, Recent: []heardPlay{}}
+	resp := nowPlayingResponse{Station: stream.Name, Recent: []heardPlay{}, Next: []heardPlay{}}
 	if p, ok := n.plays.At(streamID, listening); ok {
 		hp := heard(p)
 		resp.Now = &hp
 	}
-	for _, p := range n.plays.Recent(streamID, now.Add(-n.retention), listening, nowPlayingRecentMax) {
+	for _, p := range n.plays.Recent(streamID, now.Add(-n.retention), listening, nowPlayingListMax) {
 		if resp.Now != nil && p.ID == resp.Now.ID {
 			continue
 		}
 		resp.Recent = append(resp.Recent, heard(p))
+	}
+	for _, p := range n.plays.Upcoming(streamID, listening, nowPlayingListMax) {
+		resp.Next = append(resp.Next, heard(p))
 	}
 
 	w.Header().Set("Content-Type", "application/json")

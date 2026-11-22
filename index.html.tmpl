@@ -58,12 +58,16 @@
         {{ if .NowPlayingURL }}
         <div class="nowplaying" hidden>
           <div class="now"></div>
-          <h3>Earlier</h3>
-          <ol class="recent"></ol>
-          <details class="more" hidden>
-            <summary></summary>
-            <ol class="older"></ol>
-          </details>
+          <div class="group next" hidden>
+            <h3>Coming up</h3>
+            <ol class="top"></ol>
+            <details class="more" hidden><summary></summary><ol class="rest"></ol></details>
+          </div>
+          <div class="group recent">
+            <h3>Earlier</h3>
+            <ol class="top"></ol>
+            <details class="more" hidden><summary></summary><ol class="rest"></ol></details>
+          </div>
         </div>
         {{ end }}
       </section>
@@ -116,21 +120,29 @@
           } else {
             now.append(el("div", "empty", "Nothing listed right now: probably talk, news or a station break."));
           }
-          // Two earlier tracks up front; the rest stay folded away. The
-          // <details> element persists, so it stays open across refreshes.
-          var list = box.querySelector(".recent"), older = box.querySelector(".older"), more = box.querySelector(".more");
-          list.replaceChildren();
-          older.replaceChildren();
-          data.recent.forEach(function (p, i) {
+          // Upcoming tracks only exist for listeners behind the live broadcast.
+          var next = box.querySelector(".group.next");
+          next.hidden = !data.next.length;
+          fillGroup(next, data.next, "");
+          fillGroup(box.querySelector(".group.recent"), data.recent, "No earlier tracks yet.");
+          box.hidden = false;
+        }
+
+        // Two tracks up front; the rest stay folded away. The <details>
+        // element persists, so it stays open across refreshes.
+        function fillGroup(group, plays, emptyText) {
+          var top = group.querySelector(".top"), rest = group.querySelector(".rest"), more = group.querySelector(".more");
+          top.replaceChildren();
+          rest.replaceChildren();
+          plays.forEach(function (p, i) {
             var li = el("li"), meta = el("div", "meta");
             meta.append(el("div", null, p.title), el("div", "artist", p.artist), links(p));
             li.append(time(p), art(p), meta);
-            (i < 2 ? list : older).append(li);
+            (i < 2 ? top : rest).append(li);
           });
-          if (!data.recent.length) list.append(el("li", "empty", "No earlier tracks yet."));
-          more.hidden = data.recent.length <= 2;
-          more.querySelector("summary").textContent = (data.recent.length - 2) + " more";
-          box.hidden = false;
+          if (!plays.length && emptyText) top.append(el("li", "empty", emptyText));
+          more.hidden = plays.length <= 2;
+          more.querySelector("summary").textContent = (plays.length - 2) + " more";
         }
 
         document.querySelectorAll(".station").forEach(function (s) {

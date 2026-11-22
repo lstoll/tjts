@@ -77,6 +77,9 @@ func TestNowPlayingEndpoint(t *testing.T) {
 	if len(resp.Recent) != 1 || resp.Recent[0].ID != "old" {
 		t.Fatalf("recent = %+v", resp.Recent)
 	}
+	if len(resp.Next) != 1 || resp.Next[0].ID != "future" || !resp.Next[0].HeardAt.Equal(now.Add(time.Minute)) {
+		t.Fatalf("next = %+v", resp.Next)
+	}
 
 	for _, q := range []string{"stream=plain&tz=UTC", "stream=nope&tz=UTC", "stream=dj", "stream=dj&tz=Not/AZone"} {
 		rec := httptest.NewRecorder()
