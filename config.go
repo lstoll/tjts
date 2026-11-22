@@ -28,8 +28,8 @@ type configStream struct {
 type configNowPlaying struct {
 	// Station is the ABC service ID, e.g. triplej or doublej.
 	Station string `yaml:"station"`
-	// Lag is how far the recorded audio trails the play log: audio fetched at
-	// time T is treated as broadcast at T-Lag. Tune by ear.
+	// Lag is an optional extra trim on top of the measured segment latency.
+	// Positive values make titles change later. Usually left unset.
 	Lag time.Duration `yaml:"lag"`
 }
 

@@ -37,6 +37,7 @@
       li .artist { color: var(--muted); font-size: .875rem; }
       h3 { font-size: .875rem; color: var(--muted); font-weight: 600; margin: 12px 0 0; }
       .empty { color: var(--muted); }
+      .more summary { color: var(--muted); font-size: .875rem; padding: 8px 0; cursor: pointer; border-top: 1px solid var(--line); }
     </style>
   </head>
   <body>
@@ -59,6 +60,10 @@
           <div class="now"></div>
           <h3>Earlier</h3>
           <ol class="recent"></ol>
+          <details class="more" hidden>
+            <summary></summary>
+            <ol class="older"></ol>
+          </details>
         </div>
         {{ end }}
       </section>
@@ -111,15 +116,20 @@
           } else {
             now.append(el("div", "empty", "Nothing listed right now: probably talk, news or a station break."));
           }
-          var list = box.querySelector(".recent");
+          // Two earlier tracks up front; the rest stay folded away. The
+          // <details> element persists, so it stays open across refreshes.
+          var list = box.querySelector(".recent"), older = box.querySelector(".older"), more = box.querySelector(".more");
           list.replaceChildren();
-          data.recent.forEach(function (p) {
+          older.replaceChildren();
+          data.recent.forEach(function (p, i) {
             var li = el("li"), meta = el("div", "meta");
             meta.append(el("div", null, p.title), el("div", "artist", p.artist), links(p));
             li.append(time(p), art(p), meta);
-            list.append(li);
+            (i < 2 ? list : older).append(li);
           });
           if (!data.recent.length) list.append(el("li", "empty", "No earlier tracks yet."));
+          more.hidden = data.recent.length <= 2;
+          more.querySelector("summary").textContent = (data.recent.length - 2) + " more";
           box.hidden = false;
         }
 

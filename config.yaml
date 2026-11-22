@@ -11,15 +11,13 @@ streams:
     name: Triple J
     url: https://mediaserviceslive.akamaized.net/hls/live/2038308/triplejnsw/master.m3u8
     baseTimezone: Australia/Sydney
-    # Track titles from ABC's play log. lag is how far the recorded audio
-    # trails the log; raise it if titles change before the song does.
+    # Track titles from ABC's play log. Timing comes from the playlist's
+    # program date-time; add `lag: 5s` to make titles change later if needed.
     nowPlaying:
       station: triplej
-      lag: 20s
   - id: doublej
     name: Double J
     url: https://mediaserviceslive.akamaized.net/hls/live/2038315/doublejnsw/master.m3u8
     baseTimezone: Australia/Sydney
     nowPlaying:
       station: doublej
-      lag: 20s

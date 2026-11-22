@@ -50,8 +50,9 @@ func TestNowPlayingEndpoint(t *testing.T) {
 		{ID: "dj", Name: "Double J", BaseTimezone: "Australia/Sydney", NowPlaying: &configNowPlaying{Station: "doublej", Lag: lag}},
 		{ID: "plain", Name: "Plain", BaseTimezone: "Australia/Sydney"},
 	}
-	// A Perth listener is 3h behind Sydney in November (AEDT vs AWST).
-	shift := 3*time.Hour + lag
+	// A Perth listener is 3h behind Sydney in November (AEDT vs AWST); with no
+	// measurement yet the default segment latency applies.
+	shift := 3*time.Hour + defaultSegmentLatency + lag
 	listening := now.Add(-shift)
 	plays := newPlayIndex()
 	plays.Merge("dj", []play{

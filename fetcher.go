@@ -28,6 +28,9 @@ type fetcher struct {
 	url      *url.URL
 	streamID string
 
+	// latency, if set, is fed the measured delay of each live-edge segment.
+	latency *latencyTracker
+
 	ctx    context.Context
 	cancel context.CancelFunc
 }
@@ -77,11 +80,20 @@ func (f *fetcher) Run() error {
 
 			var td time.Duration
 
-			for n, s := range pl.Segments() {
-				if err := f.downloadSegment(plurl, s, pl.Sequence+n); err != nil {
+			segs := pl.Segments()
+			times := segmentTimes(pl)
+			for n, s := range segs {
+				fetchedAt := time.Now()
+				downloaded, err := f.downloadSegment(plurl, s, pl.Sequence+n)
+				if err != nil {
 					fetchErrorCount.WithLabelValues(f.streamID).Inc()
 					f.l.WithError(err).Warn("downloading segment")
 					continue
+				}
+				// Only the newest segment is fetched promptly; older ones in
+				// a first fetch are a backlog and would skew the measurement.
+				if downloaded && n == len(segs)-1 && len(times) == len(segs) && !times[n].IsZero() && f.latency != nil {
+					f.latency.Observe(f.streamID, fetchedAt.Sub(times[n]))
 				}
 				td = td + time.Duration(s.Duration*float64(time.Second))
 			}
@@ -180,21 +192,22 @@ func (f *fetcher) getPlaylistDepth(u *url.URL, depth int) (*m3u8.Playlist, *url.
 	return pl, r.Request.URL, nil
 }
 
-func (f *fetcher) downloadSegment(playlistURL *url.URL, s *m3u8.SegmentItem, sequence int) error {
+// downloadSegment stores the segment if it is new, reporting whether it was.
+func (f *fetcher) downloadSegment(playlistURL *url.URL, s *m3u8.SegmentItem, sequence int) (bool, error) {
 	if s.ByteRange != nil {
-		return fmt.Errorf("byte-range HLS segments are unsupported")
+		return false, fmt.Errorf("byte-range HLS segments are unsupported")
 	}
 	if !validChunkDuration(s.Duration) {
-		return fmt.Errorf("invalid segment duration %v", s.Duration)
+		return false, fmt.Errorf("invalid segment duration %v", s.Duration)
 	}
 	segmentURL, err := resolveSegmentURL(playlistURL, s.Segment)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	cn, err := chunkNameFromURL(segmentURL.String())
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	// The basename alone is not an identity: different paths and media
@@ -203,28 +216,28 @@ func (f *fetcher) downloadSegment(playlistURL *url.URL, s *m3u8.SegmentItem, seq
 	cn = fmt.Sprintf("%d-%x%s", sequence, sha256.Sum256([]byte(identity)), path.Ext(cn))
 	if f.cs.ChunkExists(f.ctx, cn) {
 		f.l.Debugf("chunk %s exists, skipping", cn)
-		return nil
+		return false, nil
 	}
 
 	f.l.Debugf("downloading chunk %s from %s", cn, segmentURL.String())
 	req, err := http.NewRequestWithContext(f.ctx, http.MethodGet, segmentURL.String(), nil)
 	if err != nil {
-		return err
+		return false, err
 	}
 	r, err := f.hc.Do(req)
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer r.Body.Close()
 	if r.StatusCode != http.StatusOK {
-		return fmt.Errorf("wanted 200 from %s, got: %d", segmentURL.String(), r.StatusCode)
+		return false, fmt.Errorf("wanted 200 from %s, got: %d", segmentURL.String(), r.StatusCode)
 	}
 
 	if err := f.cs.WriteChunk(f.ctx, cn, s.Duration, r.Body); err != nil {
-		return fmt.Errorf("writing chunk: %v", err)
+		return false, fmt.Errorf("writing chunk: %v", err)
 	}
 
-	return nil
+	return true, nil
 }
 
 func resolveSegmentURL(playlistURL *url.URL, segment string) (*url.URL, error) {

@@ -26,15 +26,17 @@ type icyServer struct {
 	indexer *chunkIndex
 	store   *s3ChunkStore
 	plays   *playIndex
+	latency *latencyTracker
 }
 
-func newIcyServer(l logrus.FieldLogger, s []configStream, i *chunkIndex, st *s3ChunkStore, plays *playIndex) *icyServer {
+func newIcyServer(l logrus.FieldLogger, s []configStream, i *chunkIndex, st *s3ChunkStore, plays *playIndex, latency *latencyTracker) *icyServer {
 	return &icyServer{
 		l:       l,
 		indexer: i,
 		streams: s,
 		store:   st,
 		plays:   plays,
+		latency: latency,
 	}
 }
 
@@ -156,7 +158,7 @@ func (i *icyServer) ServeIcecast(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			if meta != nil {
-				err = meta.WriteAudio(body.Bytes(), i.titleAt(streamID, stationName, nowPlaying, c))
+				err = meta.WriteAudio(body.Bytes(), i.titleAt(streamID, stationName, nowPlaying, c, servedTime, streamStart))
 			} else {
 				_, err = body.WriteTo(w)
 			}
@@ -218,14 +220,20 @@ func (i *icyServer) streamChunkBody(ctx context.Context, w io.Writer, l logrus.F
 	return info.format == "adts", err
 }
 
-// titleAt returns the ICY title for a position within chunk c: the track that
-// was on air when that audio was broadcast, or the station name between tracks.
-func (i *icyServer) titleAt(streamID, stationName string, np *configNowPlaying, c recordedChunk) func(float64) string {
+// titleAt returns the ICY title for a metadata block written at a position
+// within chunk c, which starts chunkPos into the stream. Players show a title
+// when they receive it, but we send audio up to streamBuffer ahead, so the
+// title is for the audio the listener is hearing as the block is written
+// rather than the audio around it. Between tracks it is the station name.
+func (i *icyServer) titleAt(streamID, stationName string, np *configNowPlaying, c recordedChunk, chunkPos time.Duration, streamStart time.Time) func(float64) string {
 	return func(frac float64) string {
 		if np == nil || i.plays == nil {
 			return stationName
 		}
-		at := c.FetchedAt.Add(-np.Lag).Add(time.Duration(frac * c.Duration * float64(time.Second)))
+		offset := time.Duration(frac * c.Duration * float64(time.Second))
+		// The player plays in real time from when it connected.
+		ahead := max(chunkPos+offset-nowFn().Sub(streamStart), 0)
+		at := c.FetchedAt.Add(offset - ahead - i.latency.Latency(streamID) - np.Lag)
 		if p, ok := i.plays.At(streamID, at); ok {
 			return p.String()
 		}

@@ -23,13 +23,13 @@ streams:
     # ...
     nowPlaying:
       station: triplej   # ABC service id
-      lag: 20s           # how far recorded audio trails the play log
+      # lag: 5s          # optional trim; positive makes titles change later
 ```
 
 - A poller fetches plays every minute and stores them per stream in S3 at `_meta/plays/<stream>.json`. On startup it loads that file, then backfills any gap from the API (which supports time ranges), so no separate backfill step is needed.
-- Each chunk's fetch time minus `lag` gives the broadcast time of its audio. The current track is the play on air at that moment, so titles follow each listener's offset.
-- `/icecast` sends `StreamTitle='Artist - Title'` every 16000 bytes when the client sends `Icy-MetaData: 1`. Between tracks it sends the station name.
-- `lag` is tuned by ear. If titles change before the song does, increase it.
+- Timing needs no tuning. ABC's playlists carry `EXT-X-PROGRAM-DATE-TIME`, so the fetcher measures how long each new segment took to reach us (median of recent segments, exported as `tjts_segment_latency_seconds`). A chunk's fetch time minus that latency is when its audio went to air, and the current track is the play on air at that moment. Titles follow each listener's offset.
+- `/icecast` sends `StreamTitle='Artist - Title'` every 16000 bytes when the client sends `Icy-MetaData: 1`. Between tracks it sends the station name. Players show a title when it arrives, and audio is sent up to 30s ahead, so each title is for the audio the listener is hearing as the block is written, not the audio packed around it.
+- `lag` is an optional trim on top of the measurement. Positive values make titles change later.
 
 ## Running locally
 

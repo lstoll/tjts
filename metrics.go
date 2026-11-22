@@ -18,6 +18,10 @@ var (
 		Name: "tjts_stream_fetch_errors",
 		Help: "Count of errors while fetching stream playlist or chunks",
 	}, []string{"streamid"})
+	segmentLatency = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "tjts_segment_latency_seconds",
+		Help: "Median delay between a segment's program date-time and when we fetched it",
+	}, []string{"streamid"})
 	playsErrorCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "tjts_now_playing_errors",
 		Help: "Count of errors loading, fetching or saving now-playing data",

@@ -70,6 +70,7 @@ func main() {
 	// oldest retained chunk can still be shown as current.
 	playsRetention := cfg.MaxOffsetTime + time.Hour
 	plays := newPlayIndex()
+	latency := newLatencyTracker()
 	pStore := &playStore{client: s3Client, bucket: cfg.S3.Bucket}
 	abc := newABCClient()
 	var playsFetchers []*playsFetcher
@@ -84,7 +85,7 @@ func main() {
 
 	hlsSess := newHLSSessions()
 	pl := newPlaylist(l.WithField("component", "playlist"), cfg.Streams, idx, store, hlsSess)
-	is := newIcyServer(l.WithField("component", "icyServer"), cfg.Streams, idx, store, plays)
+	is := newIcyServer(l.WithField("component", "icyServer"), cfg.Streams, idx, store, plays, latency)
 
 	idxPage := newIndex(l.WithField("component", "index"), cfg.Streams)
 
@@ -96,7 +97,7 @@ func main() {
 	mux.HandleFunc("/m3u8", pl.ServePlaylist)
 	mux.HandleFunc("/chunk", pl.ServeChunk)
 	mux.HandleFunc("/icecast", is.ServeIcecast)
-	mux.Handle("/nowplaying", &nowPlayingServer{streams: cfg.Streams, plays: plays, retention: playsRetention})
+	mux.Handle("/nowplaying", &nowPlayingServer{streams: cfg.Streams, plays: plays, latency: latency, retention: playsRetention})
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
 			http.Error(w, "Not Found", http.StatusNotFound)
@@ -129,6 +130,7 @@ func main() {
 		if err != nil {
 			l.WithError(err).Fatal("creating fetcher")
 		}
+		f.latency = latency
 
 		g.Add(f.Run, f.Interrupt)
 	}

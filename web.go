@@ -68,6 +68,7 @@ const nowPlayingRecentMax = 50
 type nowPlayingServer struct {
 	streams   []configStream
 	plays     *playIndex
+	latency   *latencyTracker
 	retention time.Duration
 }
 
@@ -111,7 +112,7 @@ func (n *nowPlayingServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Both endpoints serve audio fetched at least streamBuffer ago.
-	shift := max(offset, streamBuffer) + stream.NowPlaying.Lag
+	shift := max(offset, streamBuffer) + n.latency.Latency(streamID) + stream.NowPlaying.Lag
 	// The broadcast moment the listener is hearing now.
 	listening := now.Add(-shift)
 	heard := func(p play) heardPlay { return heardPlay{play: p, HeardAt: p.PlayedAt.Add(shift)} }

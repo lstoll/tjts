@@ -155,7 +155,7 @@ func TestIcecastChunkResponse(t *testing.T) {
 			store := newS3ChunkStore(client, "test", time.Hour, idx)
 			l := logrus.New()
 			l.SetOutput(io.Discard)
-			server := newIcyServer(l, []configStream{{ID: "test", Name: "Test", BaseTimezone: "Europe/Berlin"}}, idx, store, nil)
+			server := newIcyServer(l, []configStream{{ID: "test", Name: "Test", BaseTimezone: "Europe/Berlin"}}, idx, store, nil, nil)
 			rec := &cancelOnFlush{ResponseRecorder: httptest.NewRecorder(), cancel: cancel}
 			req := httptest.NewRequest(http.MethodGet, "/icecast?stream=test&tz=Europe%2FBerlin", nil).WithContext(ctx)
 			server.ServeIcecast(rec, req)
@@ -208,7 +208,7 @@ func TestIcecastMetadata(t *testing.T) {
 		l := logrus.New()
 		l.SetOutput(io.Discard)
 		streams := []configStream{{ID: "test", Name: "Test", BaseTimezone: "Europe/Berlin", NowPlaying: &configNowPlaying{Station: "test", Lag: lag}}}
-		server := newIcyServer(l, streams, idx, newS3ChunkStore(client, "test", time.Hour, idx), plays)
+		server := newIcyServer(l, streams, idx, newS3ChunkStore(client, "test", time.Hour, idx), plays, nil)
 		rec := &cancelOnFlush{ResponseRecorder: httptest.NewRecorder(), cancel: cancel}
 		req := httptest.NewRequest(http.MethodGet, "/icecast?stream=test&tz=Europe%2FBerlin", nil).WithContext(ctx)
 		if wantMeta {
