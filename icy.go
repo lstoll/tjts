@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -24,14 +25,16 @@ type icyServer struct {
 
 	indexer *chunkIndex
 	store   *s3ChunkStore
+	plays   *playIndex
 }
 
-func newIcyServer(l logrus.FieldLogger, s []configStream, i *chunkIndex, st *s3ChunkStore) *icyServer {
+func newIcyServer(l logrus.FieldLogger, s []configStream, i *chunkIndex, st *s3ChunkStore, plays *playIndex) *icyServer {
 	return &icyServer{
 		l:       l,
 		indexer: i,
 		streams: s,
 		store:   st,
+		plays:   plays,
 	}
 }
 
@@ -59,10 +62,12 @@ func (i *icyServer) ServeIcecast(w http.ResponseWriter, r *http.Request) {
 
 	var baseTZ string
 	var stationName string
+	var nowPlaying *configNowPlaying
 	for _, s := range i.streams {
 		if s.ID == streamID {
 			baseTZ = s.BaseTimezone
 			stationName = s.Name
+			nowPlaying = s.NowPlaying
 		}
 	}
 	if baseTZ == "" {
@@ -93,6 +98,12 @@ func (i *icyServer) ServeIcecast(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "audio/aacp")
 	w.Header().Set("icy-name", stationName)
 	w.Header().Set("Cache-Control", "no-store")
+	// Clients that want in-band titles (Sonos, VLC, etc.) ask with this header.
+	var meta *icyMetaWriter
+	if r.Header.Get("Icy-MetaData") == "1" {
+		w.Header().Set("icy-metaint", strconv.Itoa(icyMetaInt))
+		meta = newIcyMetaWriter(w)
+	}
 	if r.Method == http.MethodHead {
 		return
 	}
@@ -144,7 +155,12 @@ func (i *icyServer) ServeIcecast(w http.ResponseWriter, r *http.Request) {
 				}
 				return
 			}
-			if _, err := body.WriteTo(w); err != nil {
+			if meta != nil {
+				err = meta.WriteAudio(body.Bytes(), i.titleAt(streamID, stationName, nowPlaying, c))
+			} else {
+				_, err = body.WriteTo(w)
+			}
+			if err != nil {
 				l.WithError(err).Debug("writing audio to consumer")
 				return
 			}
@@ -200,6 +216,21 @@ func (i *icyServer) streamChunkBody(ctx context.Context, w io.Writer, l logrus.F
 		err = io.ErrShortWrite
 	}
 	return info.format == "adts", err
+}
+
+// titleAt returns the ICY title for a position within chunk c: the track that
+// was on air when that audio was broadcast, or the station name between tracks.
+func (i *icyServer) titleAt(streamID, stationName string, np *configNowPlaying, c recordedChunk) func(float64) string {
+	return func(frac float64) string {
+		if np == nil || i.plays == nil {
+			return stationName
+		}
+		at := c.FetchedAt.Add(-np.Lag).Add(time.Duration(frac * c.Duration * float64(time.Second)))
+		if p, ok := i.plays.At(streamID, at); ok {
+			return p.String()
+		}
+		return stationName
+	}
 }
 
 var nowFn = time.Now

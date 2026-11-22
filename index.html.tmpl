@@ -1,41 +1,148 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
   <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Radio in your TZ</title>
-    <script type="text/javascript">
-      window.onload = function() {
-          var locTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-          document.getElementById("detectedtz").innerHTML = locTz
-
-          var audElem = document.createElement('audio');
-          var supportsHLS = audElem.canPlayType('application/x-mpegURL');
-
-
-{{ range $index, $element := .Streams }}
-          var {{ .JSID }}hlsbaseURL = window.location.origin + {{ .HLSURL }}
-          var {{ .JSID }}icybaseURL = window.location.origin + {{ .ICYURL }}
-          var {{ .JSID }}hlsstreamURL = {{ .JSID }}hlsbaseURL + "&tz=" + encodeURIComponent(locTz)
-          var {{ .JSID }}icystreamURL = {{ .JSID }}icybaseURL + "&tz=" + encodeURIComponent(locTz)
-          document.getElementById("{{ .JSID }}hlsurl").innerHTML = {{ .JSID }}hlsstreamURL;
-          document.getElementById("{{ .JSID }}icyurl").innerHTML = {{ .JSID }}icystreamURL;
-          if (supportsHLS) {
-            document.getElementById("{{ .JSID }}player").type = "application/x-mpegURL";
-            document.getElementById("{{ .JSID }}player").src = {{ .JSID }}hlsstreamURL;
-          } else {
-            document.getElementById("{{ .JSID }}player").src = {{ .JSID }}icystreamURL;
-          }
-{{ end }}
-
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f6f5f2; --card: #fff; --fg: #1d1d1f; --muted: #6e6e73; --line: #e3e1dc; --accent: #c4122f;
       }
-    </script>
+      @media (prefers-color-scheme: dark) {
+        :root { --bg: #141414; --card: #1e1e1e; --fg: #f2f2f2; --muted: #9a9a9f; --line: #2e2e2e; --accent: #ff4d63; }
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.45 system-ui, -apple-system, sans-serif; }
+      main { max-width: 720px; margin: 0 auto; padding: 24px 16px 48px; }
+      header p { color: var(--muted); margin: 4px 0 0; }
+      h1 { font-size: 1.5rem; margin: 0; }
+      .station { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 20px; margin-top: 24px; }
+      .station h2 { margin: 0 0 12px; font-size: 1.25rem; }
+      audio { width: 100%; margin: 4px 0 12px; }
+      details { color: var(--muted); font-size: .875rem; }
+      details code { display: block; word-break: break-all; color: var(--fg); margin: 4px 0 8px; user-select: all; }
+      .now { display: flex; gap: 16px; align-items: center; padding: 16px 0; border-top: 1px solid var(--line); margin-top: 12px; }
+      .now img, .art-empty { width: 96px; height: 96px; border-radius: 8px; object-fit: cover; flex: none; background: var(--line); }
+      .now .label { font-size: .75rem; text-transform: uppercase; letter-spacing: .08em; color: var(--accent); font-weight: 600; }
+      .now .title { font-size: 1.125rem; font-weight: 600; }
+      .now .artist, .now .release { color: var(--muted); }
+      .links a { color: var(--muted); font-size: .8125rem; margin-right: 10px; }
+      ol { list-style: none; padding: 0; margin: 8px 0 0; }
+      li { display: flex; gap: 12px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); }
+      li img, li .art-empty { width: 44px; height: 44px; border-radius: 4px; }
+      li time { color: var(--muted); font-variant-numeric: tabular-nums; width: 4.5em; flex: none; font-size: .875rem; }
+      li .meta { min-width: 0; flex: 1; }
+      li .meta div { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      li .artist { color: var(--muted); font-size: .875rem; }
+      h3 { font-size: .875rem; color: var(--muted); font-weight: 600; margin: 12px 0 0; }
+      .empty { color: var(--muted); }
+    </style>
   </head>
   <body>
-    <h1>Timezone: <span id="detectedtz"></span></h1>
-{{ range $index, $element := .Streams }}
-    <h2>{{ .Name }} offset to your TZ</h2>
-    <p>HLS URL for detected TZ: <span id="{{ .JSID }}hlsurl"></span></p>
-    <p>Icecast URL for detected TZ: <span id="{{ .JSID }}icyurl"></span></p>
-    <audio id="{{ .JSID }}player" controls></audio>
+    <main>
+      <header>
+        <h1>Radio in your timezone</h1>
+        <p>Playing as if you were in <strong id="detectedtz"></strong></p>
+      </header>
+{{ range .Streams }}
+      <section class="station" data-hls="{{ .HLSURL }}" data-icy="{{ .ICYURL }}" data-nowplaying="{{ .NowPlayingURL }}">
+        <h2>{{ .Name }}</h2>
+        <audio controls preload="none"></audio>
+        <details>
+          <summary>Stream URLs (Sonos, VLC, etc.)</summary>
+          Icecast (shows track titles on Sonos): <code class="icyurl"></code>
+          HLS: <code class="hlsurl"></code>
+        </details>
+        {{ if .NowPlayingURL }}
+        <div class="nowplaying" hidden>
+          <div class="now"></div>
+          <h3>Earlier</h3>
+          <ol class="recent"></ol>
+        </div>
+        {{ end }}
+      </section>
 {{ end }}
+    </main>
+    <script>
+      (function () {
+        var tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        document.getElementById("detectedtz").textContent = tz;
+        var supportsHLS = document.createElement("audio").canPlayType("application/x-mpegURL");
+
+        function withTZ(path) { return window.location.origin + path + "&tz=" + encodeURIComponent(tz); }
+        function el(tag, cls, text) {
+          var e = document.createElement(tag);
+          if (cls) e.className = cls;
+          if (text) e.textContent = text;
+          return e;
+        }
+        function art(p) {
+          if (!p.artwork) return el("div", "art-empty");
+          var img = el("img");
+          img.src = p.artwork; img.alt = ""; img.loading = "lazy";
+          return img;
+        }
+        function links(p) {
+          var d = el("div", "links");
+          ["Spotify", "Apple", "Youtube"].forEach(function (k) {
+            if (!p.links || !p.links[k]) return;
+            var a = el("a", null, k === "Apple" ? "Apple Music" : k === "Youtube" ? "YouTube" : k);
+            a.href = p.links[k]; a.target = "_blank"; a.rel = "noopener";
+            d.appendChild(a);
+          });
+          return d;
+        }
+        function time(p) {
+          var t = el("time", null, new Date(p.heardAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }));
+          t.dateTime = p.heardAt;
+          return t;
+        }
+
+        function render(box, data) {
+          var now = box.querySelector(".now");
+          now.replaceChildren();
+          if (data.now) {
+            var p = data.now, info = el("div");
+            info.append(el("div", "label", "Now playing"), el("div", "title", p.title), el("div", "artist", p.artist));
+            if (p.release) info.append(el("div", "release", p.release));
+            info.append(links(p));
+            now.append(art(p), info);
+          } else {
+            now.append(el("div", "empty", "Nothing listed right now: probably talk, news or a station break."));
+          }
+          var list = box.querySelector(".recent");
+          list.replaceChildren();
+          data.recent.forEach(function (p) {
+            var li = el("li"), meta = el("div", "meta");
+            meta.append(el("div", null, p.title), el("div", "artist", p.artist), links(p));
+            li.append(time(p), art(p), meta);
+            list.append(li);
+          });
+          if (!data.recent.length) list.append(el("li", "empty", "No earlier tracks yet."));
+          box.hidden = false;
+        }
+
+        document.querySelectorAll(".station").forEach(function (s) {
+          var hls = withTZ(s.dataset.hls), icy = withTZ(s.dataset.icy);
+          s.querySelector(".hlsurl").textContent = hls;
+          s.querySelector(".icyurl").textContent = icy;
+          var player = s.querySelector("audio");
+          if (supportsHLS) { player.src = hls; } else { player.src = icy; }
+
+          var box = s.querySelector(".nowplaying");
+          if (!box || !s.dataset.nowplaying) return;
+          var url = withTZ(s.dataset.nowplaying);
+          function refresh() {
+            fetch(url, { cache: "no-store" })
+              .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+              .then(function (d) { render(box, d); })
+              .catch(function () {});
+          }
+          refresh();
+          setInterval(refresh, 20000);
+        });
+      })();
+    </script>
   </body>
 </html>

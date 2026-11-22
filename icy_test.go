@@ -155,7 +155,7 @@ func TestIcecastChunkResponse(t *testing.T) {
 			store := newS3ChunkStore(client, "test", time.Hour, idx)
 			l := logrus.New()
 			l.SetOutput(io.Discard)
-			server := newIcyServer(l, []configStream{{ID: "test", Name: "Test", BaseTimezone: "Europe/Berlin"}}, idx, store)
+			server := newIcyServer(l, []configStream{{ID: "test", Name: "Test", BaseTimezone: "Europe/Berlin"}}, idx, store, nil)
 			rec := &cancelOnFlush{ResponseRecorder: httptest.NewRecorder(), cancel: cancel}
 			req := httptest.NewRequest(http.MethodGet, "/icecast?stream=test&tz=Europe%2FBerlin", nil).WithContext(ctx)
 			server.ServeIcecast(rec, req)
@@ -180,3 +180,60 @@ type cancelOnFlush struct {
 }
 
 func (w *cancelOnFlush) Flush() { w.ResponseRecorder.Flush(); w.cancel() }
+
+func TestIcecastMetadata(t *testing.T) {
+	frames, err := os.ReadFile("testdata/aac-pid221.aac")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// ADTS frames concatenate, so repeat the fixture past a metadata boundary.
+	aac := bytes.Repeat(frames, icyMetaInt/len(frames)+2)
+	for _, wantMeta := range []bool{false, true} {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		client := s3.New(s3.Options{
+			Region: "us-east-1", BaseEndpoint: aws.String("https://storage.invalid"), UsePathStyle: true,
+			Credentials: credentials.NewStaticCredentialsProvider("test", "test", ""), RetryMaxAttempts: 1,
+			HTTPClient: &http.Client{Transport: icyTestTransport(func(*http.Request) (*http.Response, error) {
+				return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(bytes.NewReader(aac))}, nil
+			})},
+		})
+		idx := newChunkIndex()
+		fetched := time.Now().Add(-time.Minute)
+		if err := idx.RecordChunk(ctx, "test", "segment.aac", 60, fetched); err != nil {
+			t.Fatal(err)
+		}
+		plays := newPlayIndex()
+		lag := 20 * time.Second
+		plays.Merge("test", []play{{ID: "x", PlayedAt: fetched.Add(-lag - time.Minute), Duration: 600, Artist: "Artist", Title: "Song"}})
+		l := logrus.New()
+		l.SetOutput(io.Discard)
+		streams := []configStream{{ID: "test", Name: "Test", BaseTimezone: "Europe/Berlin", NowPlaying: &configNowPlaying{Station: "test", Lag: lag}}}
+		server := newIcyServer(l, streams, idx, newS3ChunkStore(client, "test", time.Hour, idx), plays)
+		rec := &cancelOnFlush{ResponseRecorder: httptest.NewRecorder(), cancel: cancel}
+		req := httptest.NewRequest(http.MethodGet, "/icecast?stream=test&tz=Europe%2FBerlin", nil).WithContext(ctx)
+		if wantMeta {
+			req.Header.Set("Icy-MetaData", "1")
+		}
+		server.ServeIcecast(rec, req)
+		cancel()
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status %d", rec.Code)
+		}
+		if !wantMeta {
+			if rec.Header().Get("icy-metaint") != "" || !bytes.Equal(rec.Body.Bytes(), aac) {
+				t.Fatal("metadata sent to client that did not ask")
+			}
+			continue
+		}
+		if rec.Header().Get("icy-metaint") != "16000" {
+			t.Fatalf("icy-metaint = %q", rec.Header().Get("icy-metaint"))
+		}
+		audio, metas := parseIcy(t, rec.Body.Bytes(), icyMetaInt)
+		if !bytes.Equal(audio, aac) {
+			t.Fatal("audio altered by metadata")
+		}
+		if len(metas) == 0 || metas[0] != "StreamTitle='Artist - Song';" {
+			t.Fatalf("metas = %q", metas)
+		}
+	}
+}

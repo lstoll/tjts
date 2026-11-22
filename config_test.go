@@ -25,6 +25,8 @@ func TestConfigRejectsInvalidSettings(t *testing.T) {
 		string(baseline) + "\nmaxOffset: -1h\n",
 		strings.Replace(string(baseline), "presignTTL: 1h", "presignTTL: 169h", 1),
 		strings.Replace(string(baseline), "https://mediaserviceslive", "file://mediaserviceslive", 1),
+		strings.Replace(string(baseline), "station: doublej", "station: ../x", 1),
+		strings.Replace(string(baseline), "lag: 20s", "lag: 1h", 1),
 	} {
 		path := filepath.Join(t.TempDir(), "config.yaml")
 		if err := os.WriteFile(path, []byte(text), 0600); err != nil {

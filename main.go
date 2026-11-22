@@ -66,9 +66,25 @@ func main() {
 		}
 	}
 
+	// Keep plays a little past the audio, so a track that started before the
+	// oldest retained chunk can still be shown as current.
+	playsRetention := cfg.MaxOffsetTime + time.Hour
+	plays := newPlayIndex()
+	pStore := &playStore{client: s3Client, bucket: cfg.S3.Bucket}
+	abc := newABCClient()
+	var playsFetchers []*playsFetcher
+	for _, s := range cfg.Streams {
+		if s.NowPlaying == nil {
+			continue
+		}
+		pf := newPlaysFetcher(l.WithField("component", "plays").WithField("stationid", s.ID), s.ID, s.NowPlaying.Station, playsRetention, plays, abc, pStore)
+		pf.Load(ctx)
+		playsFetchers = append(playsFetchers, pf)
+	}
+
 	hlsSess := newHLSSessions()
 	pl := newPlaylist(l.WithField("component", "playlist"), cfg.Streams, idx, store, hlsSess)
-	is := newIcyServer(l.WithField("component", "icyServer"), cfg.Streams, idx, store)
+	is := newIcyServer(l.WithField("component", "icyServer"), cfg.Streams, idx, store, plays)
 
 	idxPage := newIndex(l.WithField("component", "index"), cfg.Streams)
 
@@ -80,6 +96,7 @@ func main() {
 	mux.HandleFunc("/m3u8", pl.ServePlaylist)
 	mux.HandleFunc("/chunk", pl.ServeChunk)
 	mux.HandleFunc("/icecast", is.ServeIcecast)
+	mux.Handle("/nowplaying", &nowPlayingServer{streams: cfg.Streams, plays: plays, retention: playsRetention})
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
 			http.Error(w, "Not Found", http.StatusNotFound)
@@ -100,6 +117,10 @@ func main() {
 	g.Add(run.SignalHandler(ctx, os.Interrupt, syscall.SIGTERM))
 
 	g.Add(gc.Run, gc.Interrupt)
+
+	for _, pf := range playsFetchers {
+		g.Add(pf.Run, pf.Interrupt)
+	}
 
 	for _, s := range cfg.Streams {
 		fcs := store.FetcherStore(s.ID)

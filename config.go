@@ -21,6 +21,16 @@ type configStream struct {
 	Name         string `yaml:"name"`
 	URL          string `yaml:"url"`
 	BaseTimezone string `yaml:"baseTimezone"`
+	// NowPlaying enables track metadata from ABC's play log, if set.
+	NowPlaying *configNowPlaying `yaml:"nowPlaying"`
+}
+
+type configNowPlaying struct {
+	// Station is the ABC service ID, e.g. triplej or doublej.
+	Station string `yaml:"station"`
+	// Lag is how far the recorded audio trails the play log: audio fetched at
+	// time T is treated as broadcast at T-Lag. Tune by ear.
+	Lag time.Duration `yaml:"lag"`
 }
 
 // s3Config configures S3-compatible object storage (DigitalOcean Spaces, MinIO, AWS S3).
@@ -83,6 +93,14 @@ func loadAndValdiateConfig(path string) (configFile, error) {
 		}
 		if s.URL == "" {
 			ems = append(ems, fmt.Sprintf("%s: stream must have url", s.ID))
+		}
+		if np := s.NowPlaying; np != nil {
+			if !regexp.MustCompile(`^[a-z0-9_]+$`).MatchString(np.Station) {
+				ems = append(ems, fmt.Sprintf("%s: nowPlaying.station must be an ABC station id", s.ID))
+			}
+			if np.Lag < -5*time.Minute || np.Lag > 5*time.Minute {
+				ems = append(ems, fmt.Sprintf("%s: nowPlaying.lag must be within 5m", s.ID))
+			}
 		}
 		if s.BaseTimezone == "" {
 			ems = append(ems, fmt.Sprintf("%s: stream must have base timezone", s.ID))
