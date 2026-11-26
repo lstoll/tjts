@@ -132,11 +132,16 @@ func abcItem(i int, at time.Time) map[string]any {
 				"Apple":   "https://music.apple.com/au/search?term=Artist%20Song",
 			},
 		},
+		"release": map[string]any{
+			"title":        "Album",
+			"release_year": "2024",
+		},
 		"recording": map[string]any{
 			"title": fmt.Sprintf("Song %d", i), "duration": 200,
-			"artists": []map[string]any{{"name": "Artist", "type": "primary"}},
+			"artists": []map[string]any{{"name": "Artist", "type": "primary", "is_australian": i%2 == 1}},
 			"releases": []map[string]any{{
-				"title": "Album",
+				"title":        "Album",
+				"release_year": nil,
 				"artwork": []map[string]any{{
 					"url": "https://example.com/full.jpg",
 					"sizes": []map[string]any{
@@ -178,9 +183,13 @@ func TestABCClientPaging(t *testing.T) {
 	}
 	p := ps[5]
 	if p.ID != "p5" || !p.PlayedAt.Equal(t0.Add(20*time.Minute)) || p.Artist != "Artist 5" || p.Title != "Song 5" ||
-		p.Duration != 200 || p.Release != "Album" || p.Artwork != "https://example.com/340.jpg" || p.Links["Spotify"] == "" ||
+		p.Duration != 200 || p.Release != "Album" || p.Year != "2024" || !p.Australian ||
+		p.Artwork != "https://example.com/340.jpg" || p.Links["Spotify"] == "" ||
 		p.Links["Apple"] != "https://music.apple.com/search?term=Artist%20Song" {
 		t.Fatalf("bad parse: %+v", p)
+	}
+	if ps[4].Australian {
+		t.Fatalf("expected non-Australian play: %+v", ps[4])
 	}
 
 	bad := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -249,6 +258,8 @@ func TestPlaysFetcherPoll(t *testing.T) {
 	l := logrus.New()
 	l.SetOutput(io.Discard)
 	now := t0.Add(time.Hour)
+	nowFn = func() time.Time { return now }
+	defer func() { nowFn = time.Now }()
 	all := testPlays()
 
 	src := &fakeSource{}

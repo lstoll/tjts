@@ -49,14 +49,16 @@ const (
 
 // play is one logged track on a station.
 type play struct {
-	ID       string            `json:"id"`
-	PlayedAt time.Time         `json:"playedAt"`
-	Duration int               `json:"duration,omitempty"` // seconds; 0 if unknown
-	Artist   string            `json:"artist"`
-	Title    string            `json:"title"`
-	Release  string            `json:"release,omitempty"`
-	Artwork  string            `json:"artwork,omitempty"`
-	Links    map[string]string `json:"links,omitempty"`
+	ID         string            `json:"id"`
+	PlayedAt   time.Time         `json:"playedAt"`
+	Duration   int               `json:"duration,omitempty"` // seconds; 0 if unknown
+	Artist     string            `json:"artist"`
+	Title      string            `json:"title"`
+	Release    string            `json:"release,omitempty"`
+	Year       string            `json:"year,omitempty"`
+	Australian bool              `json:"australian,omitempty"`
+	Artwork    string            `json:"artwork,omitempty"`
+	Links      map[string]string `json:"links,omitempty"`
 }
 
 // String is the "Artist - Title" form used for ICY StreamTitle.
@@ -115,7 +117,8 @@ func (pi *playIndex) Merge(streamID string, ps []play) bool {
 
 func playEqual(a, b play) bool {
 	if a.ID != b.ID || !a.PlayedAt.Equal(b.PlayedAt) || a.Duration != b.Duration || a.Artist != b.Artist ||
-		a.Title != b.Title || a.Release != b.Release || a.Artwork != b.Artwork || len(a.Links) != len(b.Links) {
+		a.Title != b.Title || a.Release != b.Release || a.Year != b.Year || a.Australian != b.Australian ||
+		a.Artwork != b.Artwork || len(a.Links) != len(b.Links) {
 		return false
 	}
 	for k, v := range a.Links {
@@ -219,23 +222,28 @@ func newABCClient() *abcClient {
 	return &abcClient{http: &http.Client{Timeout: 30 * time.Second}, baseURL: abcPlaysURL}
 }
 
+type abcRelease struct {
+	Title       string       `json:"title"`
+	ReleaseYear string       `json:"release_year"`
+	Artwork     []abcArtwork `json:"artwork"`
+}
+
 type abcResponse struct {
 	Total int `json:"total"`
 	Items []struct {
-		ARID       string    `json:"arid"`
-		PlayedTime time.Time `json:"played_time"`
+		ARID       string      `json:"arid"`
+		PlayedTime time.Time   `json:"played_time"`
+		Release    *abcRelease `json:"release"`
 		Recording  struct {
 			Title    string `json:"title"`
 			Duration int    `json:"duration"`
 			Artists  []struct {
-				Name string `json:"name"`
-				Type string `json:"type"`
+				Name         string `json:"name"`
+				Type         string `json:"type"`
+				IsAustralian bool   `json:"is_australian"`
 			} `json:"artists"`
-			Releases []struct {
-				Title   string       `json:"title"`
-				Artwork []abcArtwork `json:"artwork"`
-			} `json:"releases"`
-			Artwork []abcArtwork `json:"artwork"`
+			Releases []abcRelease `json:"releases"`
+			Artwork  []abcArtwork `json:"artwork"`
 		} `json:"recording"`
 		Summary struct {
 			Artist string            `json:"artist"`
@@ -298,9 +306,32 @@ func (r abcResponse) plays() []play {
 				}
 			}
 		}
+		for _, a := range it.Recording.Artists {
+			if a.IsAustralian {
+				p.Australian = true
+				break
+			}
+		}
+		if it.Release != nil {
+			p.Release = it.Release.Title
+			p.Year = it.Release.ReleaseYear
+			p.Artwork = artworkURL(it.Release.Artwork)
+		}
 		if len(it.Recording.Releases) > 0 {
-			p.Release = it.Recording.Releases[0].Title
-			p.Artwork = artworkURL(it.Recording.Releases[0].Artwork)
+			if p.Release == "" {
+				p.Release = it.Recording.Releases[0].Title
+			}
+			if p.Year == "" {
+				for _, rel := range it.Recording.Releases {
+					if rel.ReleaseYear != "" {
+						p.Year = rel.ReleaseYear
+						break
+					}
+				}
+			}
+			if p.Artwork == "" {
+				p.Artwork = artworkURL(it.Recording.Releases[0].Artwork)
+			}
 		}
 		if p.Artwork == "" {
 			p.Artwork = artworkURL(it.Recording.Artwork)
@@ -472,7 +503,7 @@ func (f *playsFetcher) Load(ctx context.Context) {
 		ps[i].Links = normalizeLinks(ps[i].Links)
 	}
 	f.idx.Merge(f.streamID, ps)
-	f.idx.Prune(f.streamID, time.Now().Add(-f.retention))
+	f.idx.Prune(f.streamID, nowFn().Add(-f.retention))
 }
 
 func (f *playsFetcher) Run() error {

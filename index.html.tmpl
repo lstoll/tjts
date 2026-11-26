@@ -27,6 +27,7 @@
       .now .label { font-size: .75rem; text-transform: uppercase; letter-spacing: .08em; color: var(--accent); font-weight: 600; }
       .now .title { font-size: 1.125rem; font-weight: 600; }
       .now .artist, .now .release { color: var(--muted); }
+      .year { color: var(--muted); font-weight: 400; }
       .links a { color: var(--muted); font-size: .8125rem; margin-right: 10px; }
       ol { list-style: none; padding: 0; margin: 8px 0 0; }
       li { display: flex; gap: 12px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); }
@@ -108,12 +109,27 @@
           return t;
         }
 
+        function titleEl(p, cls) {
+          var d = el("div", cls, p.title);
+          if (p.year) d.append(el("span", "year", " (" + p.year + ")"));
+          return d;
+        }
+        function artistEl(p) {
+          var d = el("div", "artist", p.artist);
+          if (p.australian) {
+            var flag = el("span", "aus", " 🇦🇺");
+            flag.title = "Australian artist";
+            d.append(flag);
+          }
+          return d;
+        }
+
         function render(box, data) {
           var now = box.querySelector(".now");
           now.replaceChildren();
           if (data.now) {
             var p = data.now, info = el("div");
-            info.append(el("div", "label", "Now playing"), el("div", "title", p.title), el("div", "artist", p.artist));
+            info.append(el("div", "label", "Now playing"), titleEl(p, "title"), artistEl(p));
             if (p.release) info.append(el("div", "release", p.release));
             info.append(links(p));
             now.append(art(p), info);
@@ -136,7 +152,7 @@
           rest.replaceChildren();
           plays.forEach(function (p, i) {
             var li = el("li"), meta = el("div", "meta");
-            meta.append(el("div", null, p.title), el("div", "artist", p.artist), links(p));
+            meta.append(titleEl(p, null), artistEl(p), links(p));
             li.append(time(p), art(p), meta);
             (i < 2 ? top : rest).append(li);
           });
